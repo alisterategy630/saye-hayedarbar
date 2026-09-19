@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سایه‌های دربار</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="app">
+
+    <section id="homeScreen" class="screen">
+        <div class="panel">
+            <div class="logo">🏛️</div>
+            <h1>سایه‌های دربار</h1>
+            <p class="subtitle">بازی توطئه و سیاست در دربار قاجار</p>
+
+            <input id="playerName" maxlength="20" placeholder="نام بازیکن">
+            <button id="createRoomButton">ساخت اتاق</button>
+
+            <div class="divider">یا</div>
+
+            <input id="roomCodeInput" maxlength="4" inputmode="numeric" placeholder="کد ۴ رقمی اتاق">
+            <button id="joinRoomButton" class="secondary">ورود به اتاق</button>
+            <div id="errorMessage" class="error"></div>
+        </div>
+    </section>
+
+    <section id="lobbyScreen" class="screen hidden">
+        <div class="panel lobby">
+            <div class="topBar">
+                <div>
+                    <span class="smallText">کد اتاق</span>
+                    <div id="roomCode" class="roomCode">----</div>
+                </div>
+                <div id="playerCount" class="playerCount">0 / 10</div>
+            </div>
+
+            <h2>لابی دربار</h2>
+            <div id="playersList" class="playersList"></div>
+            <button id="startGameButton">شروع بازی</button>
+
+            <div class="chatBox">
+                <h3>💬 گفت‌وگوی دربار</h3>
+                <div id="chatMessages" class="chatMessages"></div>
+                <div class="chatInputRow">
+                    <input id="chatInput" maxlength="300" placeholder="پیامت را بنویس...">
+                    <button id="sendChatButton">ارسال</button>
+                </div>
+            </div>
+
+            <div id="lobbyMessage" class="message"></div>
+        </div>
+    </section>
+
+    <section id="roleScreen" class="screen hidden">
+        <div class="panel rolePanel">
+            <div class="logo">🎴</div>
+            <h1>نقش شما</h1>
+            <div id="roleCard" class="roleCard"></div>
+            <div id="alliesBox" class="alliesBox"></div>
+            <button id="continueGameButton">ورود به بازی</button>
+        </div>
+    </section>
+
+    <section id="gameScreen" class="screen hidden">
+        <div class="gameLayout">
+
+            <div class="panel gameMain">
+                <div class="gameHeader">
+                    <div>
+                        <span class="smallText">مرحله</span>
+                        <h2 id="phaseTitle">---</h2>
+                    </div>
+                    <div id="policyDeckCount" class="deckCount">کارت‌های باقی‌مانده: --</div>
+                </div>
+
+                <div class="tracks">
+                    <div class="track constitutionalTrack">
+                        <div class="trackHead">
+                            <span>🟦 مشروطه</span>
+                            <strong id="constitutionalCount">0 / 5</strong>
+                        </div>
+                        <div id="constitutionalTrack" class="trackBoxes"></div>
+                    </div>
+
+                    <div class="track qajarTrack">
+                        <div class="trackHead">
+                            <span>🟥 قاجاری</span>
+                            <strong id="qajarCount">0 / 6</strong>
+                        </div>
+                        <div id="qajarTrack" class="trackBoxes"></div>
+                    </div>
+                </div>
+
+                <div id="presidentBox" class="infoCard"></div>
+                <div id="nomineeBox" class="infoCard"></div>
+
+                <div id="nominationBox" class="actionBox hidden">
+                    <h3>👑 انتخاب وزیر</h3>
+                    <p>یک بازیکن را برای وزارت معرفی کن.</p>
+                    <select id="nomineeSelect"></select>
+                    <button id="nominateButton">معرفی وزیر</button>
+                </div>
+
+                <div id="voteBox" class="actionBox hidden">
+                    <h3>🗳️ رأی‌گیری</h3>
+                    <p id="voteDescription"></p>
+                    <button id="yesVoteButton">✅ موافقم</button>
+                    <button id="noVoteButton" class="secondary">❌ مخالفم</button>
+                    <div id="voteStatus" class="message"></div>
+                </div>
+
+                <div id="presidentPolicyBox" class="actionBox hidden">
+                    <h3>📜 دو کارت به دست صدر رسید</h3>
+                    <p>یکی از کارت‌ها را مخفیانه کنار بگذار.</p>
+                    <div id="presidentCards" class="policyCards"></div>
+                    <div id="discardHint" class="message"></div>
+                </div>
+
+                <div id="ministerPolicyBox" class="actionBox hidden">
+                    <h3>📜 کارت سیاست وزیر</h3>
+                    <div id="ministerCard" class="policyCard single"></div>
+                    <button id="enactButton">تصویب این سیاست</button>
+                </div>
+
+                <div id="publicResult" class="resultBox"></div>
+                <div id="gameMessage" class="message"></div>
+            </div>
+
+            <aside class="panel sidePanel">
+                <h3>👥 بازیکنان</h3>
+                <div id="gamePlayers" class="playersList"></div>
+            </aside>
+
+        </div>
+    </section>
+
+    <section id="gameOverScreen" class="screen hidden">
+        <div class="panel gameOverPanel">
+            <div id="gameOverIcon" class="logo">🏆</div>
+            <h1 id="gameOverTitle">بازی تمام شد</h1>
+            <p id="gameOverReason" class="subtitle"></p>
+            <button id="reloadButton">شروع دوباره</button>
+        </div>
+    </section>
+
+</main>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
