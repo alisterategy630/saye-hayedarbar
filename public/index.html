@@ -1,589 +1,124 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>سایه‌های دربار</title>
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>سایه‌های دربار</title>
+<link rel="stylesheet" href="style.css">
 </head>
-
 <body>
 <main class="app">
 
-    <!-- ================= HOME ================= -->
-
-    <section id="homeScreen" class="screen">
-        <div class="panel">
-
-            <div class="logo">🏛️</div>
-
-            <h1>سایه‌های دربار</h1>
-
-            <p class="subtitle">
-                بازی توطئه و سیاست در دربار قاجار
-            </p>
-
-            <input
-                id="playerName"
-                maxlength="20"
-                placeholder="نام بازیکن"
-            >
-
-            <button id="createRoomButton">
-                ساخت اتاق
-            </button>
-
-            <div class="divider">یا</div>
-
-            <input
-                id="roomCodeInput"
-                maxlength="4"
-                inputmode="numeric"
-                placeholder="کد ۴ رقمی اتاق"
-            >
-
-            <button
-                id="joinRoomButton"
-                class="secondary"
-            >
-                ورود به اتاق
-            </button>
-
-            <!-- آموزش -->
-
-            <button
-                id="tutorialButton"
-                class="tutorialButton"
-                type="button"
-            >
-                📖 آموزش بازی
-            </button>
-
-            <div id="errorMessage" class="error"></div>
-
-        </div>
-    </section>
-
-
-    <!-- ================= TUTORIAL ================= -->
-
-    <section id="tutorialScreen" class="screen hidden">
-
-        <div class="panel tutorialPanel">
-
-            <div class="logo">📖</div>
-
-            <h1>آموزش سایه‌های دربار</h1>
-
-            <div class="tutorialContent">
-
-                <div class="tutorialSection">
-                    <h3>🎭 هدف بازی</h3>
-
-                    <p>
-                        در این بازی بازیکنان به دو جناح تقسیم می‌شوند:
-                        مشروطه‌خواهان و قاجاریان.
-                    </p>
-
-                    <p>
-                        هر جناح تلاش می‌کند سیاست‌های خودش را در دربار
-                        به تصویب برساند.
-                    </p>
-                </div>
-
-
-                <div class="tutorialSection">
-                    <h3>👑 نقش‌ها</h3>
-
-                    <p>
-                        بعضی بازیکنان مشروطه‌خواه هستند و بعضی قاجاری.
-                        در میان قاجاریان، نقش ویژه‌ای نیز وجود دارد.
-                    </p>
-
-                    <p>
-                        نقش شما در ابتدای بازی به صورت محرمانه نمایش داده می‌شود.
-                    </p>
-                </div>
-
-
-                <div class="tutorialSection">
-                    <h3>🏛️ روند هر دور</h3>
-
-                    <p>
-                        ابتدا یک بازیکن به عنوان صدر انتخاب می‌شود.
-                        صدر باید یک بازیکن دیگر را برای وزارت معرفی کند.
-                    </p>
-
-                    <p>
-                        سپس تمام بازیکنان درباره دولت پیشنهادی رأی می‌دهند.
-                    </p>
-                </div>
-
-
-                <div class="tutorialSection">
-                    <h3>🗳️ رأی‌گیری</h3>
-
-                    <p>
-                        هر بازیکن می‌تواند با دولت پیشنهادی موافق یا مخالف باشد.
-                    </p>
-
-                    <p>
-                        اگر دولت تأیید شود، مرحله سیاست آغاز می‌شود.
-                    </p>
-                </div>
-
-
-                <div class="tutorialSection">
-                    <h3>📜 کارت‌های سیاست</h3>
-
-                    <p>
-                        صدر کارت‌های سیاست دریافت می‌کند و یکی از آن‌ها
-                        را کنار می‌گذارد.
-                    </p>
-
-                    <p>
-                        کارت باقی‌مانده به وزیر داده می‌شود تا آن را تصویب کند.
-                    </p>
-                </div>
-
-
-                <div class="tutorialSection">
-                    <h3>🏆 پایان بازی</h3>
-
-                    <p>
-                        با رسیدن یکی از جناح‌ها به تعداد لازم سیاست‌های خود،
-                        بازی به پایان می‌رسد.
-                    </p>
-                </div>
-
-            </div>
-
-            <button id="backFromTutorialButton">
-                ↩️ بازگشت به منو
-            </button>
-
-        </div>
-
-    </section>
-
-
-    <!-- ================= LOBBY ================= -->
-
-    <section id="lobbyScreen" class="screen hidden">
-
-        <div class="panel lobby">
-
-            <div class="topBar">
-
-                <div>
-                    <span class="smallText">
-                        کد اتاق
-                    </span>
-
-                    <div id="roomCode" class="roomCode">
-                        ----
-                    </div>
-                </div>
-
-                <div
-                    id="playerCount"
-                    class="playerCount"
-                >
-                    0 / 10
-                </div>
-
-            </div>
-
-
-            <h2>لابی دربار</h2>
-
-            <div
-                id="playersList"
-                class="playersList"
-            ></div>
-
-
-            <button id="startGameButton">
-                شروع بازی
-            </button>
-
-
-            <!-- چت لابی -->
-
-            <div class="chatBox">
-
-                <h3>💬 گفت‌وگوی دربار</h3>
-
-                <div
-                    id="chatMessages"
-                    class="chatMessages"
-                ></div>
-
-                <div class="chatInputRow">
-
-                    <input
-                        id="chatInput"
-                        maxlength="300"
-                        placeholder="پیامت را بنویس..."
-                    >
-
-                    <button id="sendChatButton">
-                        ارسال
-                    </button>
-
-                </div>
-
-            </div>
-
-
-            <div
-                id="lobbyMessage"
-                class="message"
-            ></div>
-
-        </div>
-
-    </section>
-
-
-    <!-- ================= ROLE ================= -->
-
-    <section id="roleScreen" class="screen hidden">
-
-        <div class="panel rolePanel">
-
-            <div class="logo">🎴</div>
-
-            <h1>نقش شما</h1>
-
-            <div
-                id="roleCard"
-                class="roleCard"
-            ></div>
-
-            <div
-                id="alliesBox"
-                class="alliesBox"
-            ></div>
-
-            <button id="continueGameButton">
-                ورود به بازی
-            </button>
-
-        </div>
-
-    </section>
-
-
-    <!-- ================= GAME ================= -->
-
-    <section id="gameScreen" class="screen hidden">
-
-        <div class="gameLayout">
-
-            <!-- بخش اصلی بازی -->
-
-            <div class="panel gameMain">
-
-                <div class="gameHeader">
-
-                    <div>
-
-                        <span class="smallText">
-                            مرحله
-                        </span>
-
-                        <h2 id="phaseTitle">
-                            ---
-                        </h2>
-
-                    </div>
-
-                    <div
-                        id="policyDeckCount"
-                        class="deckCount"
-                    >
-                        کارت‌های باقی‌مانده: --
-                    </div>
-
-                </div>
-
-
-                <!-- نوارهای پیشرفت -->
-
-                <div class="tracks">
-
-                    <div class="track constitutionalTrack">
-
-                        <div class="trackHead">
-
-                            <span>
-                                🟦 مشروطه
-                            </span>
-
-                            <strong id="constitutionalCount">
-                                0 / 5
-                            </strong>
-
-                        </div>
-
-                        <div
-                            id="constitutionalTrack"
-                            class="trackBoxes"
-                        ></div>
-
-                    </div>
-
-
-                    <div class="track qajarTrack">
-
-                        <div class="trackHead">
-
-                            <span>
-                                🟥 قاجاری
-                            </span>
-
-                            <strong id="qajarCount">
-                                0 / 6
-                            </strong>
-
-                        </div>
-
-                        <div
-                            id="qajarTrack"
-                            class="trackBoxes"
-                        ></div>
-
-                    </div>
-
-                </div>
-
-
-                <!-- اطلاعات صدر و وزیر -->
-
-                <div
-                    id="presidentBox"
-                    class="infoCard"
-                ></div>
-
-                <div
-                    id="nomineeBox"
-                    class="infoCard"
-                ></div>
-
-
-                <!-- انتخاب وزیر -->
-
-                <div
-                    id="nominationBox"
-                    class="actionBox hidden"
-                >
-
-                    <h3>
-                        👑 انتخاب وزیر
-                    </h3>
-
-                    <p>
-                        یک بازیکن را برای وزارت معرفی کن.
-                    </p>
-
-                    <select id="nomineeSelect"></select>
-
-                    <button id="nominateButton">
-                        معرفی وزیر
-                    </button>
-
-                    <div
-                        id="nominationTimer"
-                        class="gameTimer"
-                    >
-                        ⏱️ 60
-                    </div>
-
-                </div>
-
-
-                <!-- رأی‌گیری -->
-
-                <div
-                    id="voteBox"
-                    class="actionBox hidden"
-                >
-
-                    <h3>
-                        🗳️ رأی‌گیری
-                    </h3>
-
-                    <p id="voteDescription"></p>
-
-                    <button id="yesVoteButton">
-                        ✅ موافقم
-                    </button>
-
-                    <button
-                        id="noVoteButton"
-                        class="secondary"
-                    >
-                        ❌ مخالفم
-                    </button>
-
-                    <div
-                        id="voteStatus"
-                        class="message"
-                    ></div>
-
-                </div>
-
-
-                <!-- کارت‌های صدر -->
-
-                <div
-                    id="presidentPolicyBox"
-                    class="actionBox hidden"
-                >
-
-                    <h3>
-                        📜 دو کارت به دست صدر رسید
-                    </h3>
-
-                    <p>
-                        یکی از کارت‌ها را مخفیانه کنار بگذار.
-                    </p>
-
-                    <div
-                        id="presidentCards"
-                        class="policyCards"
-                    ></div>
-
-                    <div
-                        id="discardHint"
-                        class="message"
-                    ></div>
-
-                </div>
-
-
-                <!-- کارت وزیر -->
-
-                <div
-                    id="ministerPolicyBox"
-                    class="actionBox hidden"
-                >
-
-                    <h3>
-                        📜 کارت سیاست وزیر
-                    </h3>
-
-                    <div
-                        id="ministerCard"
-                        class="policyCard single"
-                    ></div>
-
-                    <button id="enactButton">
-                        تصویب این سیاست
-                    </button>
-
-                </div>
-
-
-                <div
-                    id="publicResult"
-                    class="resultBox"
-                ></div>
-
-                <div
-                    id="gameMessage"
-                    class="message"
-                ></div>
-
-            </div>
-
-
-            <!-- ================= SIDEBAR ================= -->
-
-            <aside class="panel sidePanel">
-
-                <h3>
-                    👥 بازیکنان
-                </h3>
-
-                <div
-                    id="gamePlayers"
-                    class="playersList"
-                ></div>
-
-
-                <!-- چت داخل بازی -->
-
-                <div class="gameChatBox">
-
-                    <h3>
-                        💬 گفت‌وگوی بازیکنان
-                    </h3>
-
-                    <div
-                        id="gameChatMessages"
-                        class="gameChatMessages"
-                    ></div>
-
-                    <div class="gameChatInput">
-
-                        <input
-                            id="gameChatInput"
-                            maxlength="300"
-                            placeholder="پیام..."
-                        >
-
-                        <button id="gameChatSendButton">
-                            ➤
-                        </button>
-
-                    </div>
-
-                </div>
-
-            </aside>
-
-        </div>
-
-    </section>
-
-
-    <!-- ================= GAME OVER ================= -->
-
-    <section id="gameOverScreen" class="screen hidden">
-
-        <div class="panel gameOverPanel">
-
-            <div
-                id="gameOverIcon"
-                class="logo"
-            >
-                🏆
-            </div>
-
-            <h1 id="gameOverTitle">
-                بازی تمام شد
-            </h1>
-
-            <p
-                id="gameOverReason"
-                class="subtitle"
-            ></p>
-
-            <button id="reloadButton">
-                شروع دوباره
-            </button>
-
-        </div>
-
-    </section>
+<section id="homeScreen" class="screen">
+  <div class="panel homePanel">
+    <div class="royalHero">
+      <div class="heroGlow"></div>
+      <img class="naserPortrait" src="https://upload.wikimedia.org/wikipedia/commons/4/4a/Portrait_of_Naser_al-Din_Shah_Qajar_-_E._J._Turner_-_Golestan_Palace.jpg" alt="پرتره ناصرالدین شاه قاجار">
+      <div class="heroText">
+        <span class="eyebrow">دربار قاجار • فصل اول</span>
+        <h1>سایه‌های دربار</h1>
+        <p class="subtitle">توطئه، سیاست و قدرت در تاریک‌ترین شب‌های دربار</p>
+      </div>
+    </div>
+
+    <div class="walletBar">
+      <div><span>🪙</span><strong id="coinCount">0</strong><small> سکه</small></div>
+      <button id="openShopButton" class="miniButton" type="button">👤 آواتارها</button>
+      <button id="openGiftButton" class="miniButton" type="button">🎁 کد هدیه</button>
+    </div>
+
+    <input id="playerName" maxlength="20" placeholder="نام بازیکن">
+    <button id="createRoomButton">👑 ساخت اتاق جدید</button>
+    <div class="divider">یا</div>
+    <input id="roomCodeInput" maxlength="4" inputmode="numeric" placeholder="کد ۴ رقمی اتاق">
+    <button id="joinRoomButton" class="secondary">🚪 ورود به اتاق</button>
+
+    <div class="homeActions">
+      <button id="tutorialButton" class="secondary" type="button">📖 آموزش بازی</button>
+      <button id="musicButton" class="secondary" type="button">🎵 موسیقی: خاموش</button>
+    </div>
+    <audio id="menuMusic" loop preload="none" src="music/hoaye-geryeh.mp3"></audio>
+    <div id="musicHint" class="smallText center">برای موسیقی، فایل مجاز آهنگ را با نام <b>hoaye-geryeh.mp3</b> داخل پوشه <b>public/music</b> قرار بده.</div>
+    <div id="errorMessage" class="error"></div>
+  </div>
+</section>
+
+<section id="tutorialScreen" class="screen hidden">
+  <div class="panel tutorialPanel">
+    <div class="sectionTitle"><span>📖</span><h1>آموزش دربار</h1></div>
+    <div class="tutorialGrid">
+      <article><h3>🎭 هدف</h3><p>دو جناح مشروطه‌خواه و قاجاری برای تصویب سیاست‌های خود رقابت می‌کنند.</p></article>
+      <article><h3>👑 نقش‌ها</h3><p>نقش شما مخفی است. در میان قاجاریان، ناصرالدین شاه نقش ویژه دارد.</p></article>
+      <article><h3>🏛️ هر دور</h3><p>صدر یک وزیر معرفی می‌کند، سپس همه درباره دولت پیشنهادی رأی می‌دهند.</p></article>
+      <article><h3>🎴 سیاست</h3><p>صدر ۳ کارت می‌گیرد و یکی را کنار می‌گذارد؛ ۲ کارت باقی‌مانده به وزیر می‌رسد و وزیر یکی را تصویب می‌کند.</p></article>
+      <article><h3>⏱️ زمان</h3><p>صدر برای معرفی وزیر ۶۰ ثانیه فرصت دارد. در صورت پایان زمان، یک گزینه به صورت خودکار انتخاب می‌شود.</p></article>
+      <article><h3>🏆 پیروزی</h3><p>مشروطه با ۵ سیاست و قاجاریان با ۶ سیاست پیروز می‌شوند؛ پس از ۳ سیاست قاجاری، رسیدن ناصرالدین شاه به وزارت نیز پایان فوری بازی است.</p></article>
+    </div>
+    <button id="backFromTutorialButton">↩️ بازگشت به منو</button>
+  </div>
+</section>
+
+<section id="shopScreen" class="screen hidden">
+  <div class="panel modalPanel">
+    <div class="sectionTitle"><span>👤</span><h1>بازار آواتار</h1></div>
+    <div class="coinLarge">🪙 <span id="shopCoins">0</span></div>
+    <div id="avatarGrid" class="avatarGrid"></div>
+    <button id="closeShopButton" class="secondary">بستن</button>
+  </div>
+</section>
+
+<section id="giftScreen" class="screen hidden">
+  <div class="panel modalPanel giftPanel">
+    <div class="sectionTitle"><span>🎁</span><h1>خزانه هدایا</h1></div>
+    <p class="subtitle">یک کد هدیه را وارد کن. هر کد فقط یک بار برای هر بازیکن قابل استفاده است.</p>
+    <input id="giftCodeInput" maxlength="20" placeholder="مثلاً QAJAR100">
+    <button id="redeemGiftButton">🎁 دریافت سکه</button>
+    <div id="giftMessage" class="message"></div>
+    <button id="closeGiftButton" class="secondary">بستن</button>
+  </div>
+</section>
+
+<section id="lobbyScreen" class="screen hidden">
+  <div class="panel lobby">
+    <div class="topBar"><div><span class="smallText">کد اتاق</span><div id="roomCode" class="roomCode">----</div></div><div id="playerCount" class="playerCount">0 / 10</div></div>
+    <h2>لابی دربار</h2>
+    <div id="playersList" class="playersList"></div>
+    <button id="startGameButton">🎴 شروع بازی</button>
+    <div class="chatBox"><h3>💬 گفت‌وگوی دربار</h3><div id="chatMessages" class="chatMessages"></div><div class="chatInputRow"><input id="chatInput" maxlength="300" placeholder="پیامت را بنویس..."><button id="sendChatButton">ارسال</button></div></div>
+    <div id="lobbyMessage" class="message"></div>
+  </div>
+</section>
+
+<section id="roleScreen" class="screen hidden">
+  <div class="panel rolePanel"><div class="roleSeal">👑</div><h1>نقش شما</h1><div id="roleCard" class="roleCard"></div><div id="alliesBox" class="alliesBox"></div><button id="continueGameButton">ورود به بازی</button></div>
+</section>
+
+<section id="gameScreen" class="screen hidden">
+  <div class="gameLayout">
+    <div class="panel gameMain">
+      <div class="gameHeader"><div><span class="smallText">مرحله</span><h2 id="phaseTitle">---</h2></div><div id="policyDeckCount" class="deckCount">کارت‌های باقی‌مانده: --</div></div>
+      <div class="tracks">
+        <div class="track constitutionalTrack"><div class="trackHead"><span>🟦 مشروطه</span><strong id="constitutionalCount">0 / 5</strong></div><div id="constitutionalTrack" class="trackBoxes"></div></div>
+        <div class="track qajarTrack"><div class="trackHead"><span>🟥 قاجاری</span><strong id="qajarCount">0 / 6</strong></div><div id="qajarTrack" class="trackBoxes"></div></div>
+      </div>
+      <div id="presidentBox" class="infoCard"></div><div id="nomineeBox" class="infoCard"></div>
+      <div id="nominationBox" class="actionBox hidden"><h3>👑 انتخاب وزیر</h3><p>یک بازیکن را برای وزارت معرفی کن.</p><select id="nomineeSelect"></select><button id="nominateButton">معرفی وزیر</button><div id="nominationTimer" class="gameTimer">⏱️ 60</div></div>
+      <div id="voteBox" class="actionBox hidden"><h3>🗳️ رأی‌گیری</h3><p id="voteDescription"></p><button id="yesVoteButton">✅ موافقم</button><button id="noVoteButton" class="secondary">❌ مخالفم</button><div id="voteStatus" class="message"></div></div>
+      <div id="presidentPolicyBox" class="actionBox hidden"><h3>📜 سه کارت به دست صدر رسید</h3><p>یکی را مخفیانه کنار بگذار؛ دو کارت باقی‌مانده به وزیر می‌رود.</p><div id="presidentCards" class="policyCards three"></div><div id="discardHint" class="message"></div></div>
+      <div id="ministerPolicyBox" class="actionBox hidden"><h3>📜 دو کارت به دست وزیر رسید</h3><p>یکی را برای تصویب انتخاب کن؛ دیگری کنار گذاشته می‌شود.</p><div id="ministerCards" class="policyCards"></div></div>
+      <div id="publicResult" class="resultBox"></div><div id="gameMessage" class="message"></div>
+    </div>
+    <aside class="panel sidePanel">
+      <h3>👥 بازیکنان</h3><div id="gamePlayers" class="playersList"></div>
+      <div class="gameChatBox"><h3>💬 گفت‌وگوی بازیکنان</h3><div id="gameChatMessages" class="gameChatMessages"></div><div class="gameChatInput"><input id="gameChatInput" maxlength="300" placeholder="پیام..."><button id="gameChatSendButton">➤</button></div></div>
+    </aside>
+  </div>
+</section>
+
+<section id="gameOverScreen" class="screen hidden"><div class="panel gameOverPanel"><div id="gameOverIcon" class="logo">🏆</div><h1 id="gameOverTitle">بازی تمام شد</h1><p id="gameOverReason" class="subtitle"></p><button id="reloadButton">شروع دوباره</button></div></section>
 
 </main>
-
-
 <script src="/socket.io/socket.io.js"></script>
 <script src="game.js"></script>
-
 </body>
 </html>
