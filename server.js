@@ -1,3 +1,5 @@
+"use strict";
+
 const express = require("express");
 const http = require("http");
 const path = require("path");
@@ -5,16 +7,19 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
+const io = new Server(server);
 
-const io = new Server(server, {
-    pingInterval: 25000,
-    pingTimeout: 60000,
-    transports: ["websocket", "polling"]
-});
+const PORT = process.env.PORT || 3000;
 
+app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-const rooms = new Map();
+/* =========================================================
+   GAME CONSTANTS
+   ========================================================= */
+
+const MIN_PLAYERS = 4;
+const MAX_PLAYERS = 10;
 
 const ROLE = {
     CONSTITUTIONALIST: "constitutionalist",
@@ -22,31 +27,140 @@ const ROLE = {
     NASER: "naser"
 };
 
-/*
-    قوانین بازی:
+const PHASE = {
+    LOBBY: "lobby",
+    NOMINATION: "nomination",
+    VOTE: "vote",
+    PRESIDENT_DISCARD: "president_discard",
+    MINISTER_ENACT: "minister_enact",
+    GAME_OVER: "game_over"
+};
 
-    حداقل بازیکن: 4
-    حداکثر بازیکن: 10
+/* =========================================================
+   ROOMS
+   ========================================================= */
 
-    هر دولت:
-    1. صدر یک وزیر معرفی می‌کند.
-    2. همه رأی می‌دهند.
-    3. اگر دولت تأیید شد:
-       - صدر 3 کارت دریافت می‌کند.
-       - صدر 1 کارت را حذف می‌کند.
-       - 2 کارت باقی‌مانده به وزیر می‌رود.
-       - وزیر 1 کارت را تصویب می‌کند.
-       - کارت دیگر کنار گذاشته می‌شود.
-*/
+const rooms = new Map();
 
-function createRoomCode() {
+/* =========================================================
+   UTILITY
+   ========================================================= */
+
+function generateRoomCode() {
     let code;
 
     do {
-        code = Math.floor(1000 + Math.random() * 9000).toString();
+        code = String(Math.floor(1000 + Math.random() * 9000));
     } while (rooms.has(code));
 
     return code;
+}
+
+function cleanName(name) {
+    return String(name || "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .slice(0, 20);
+}
+
+function getRoom(socket) {
+    const roomCode = socket.data.roomCode;
+
+    if (!roomCode) {
+        return null;
+    }
+
+    return rooms.get(roomCode) || null;
+}
+
+function getPlayer(room, socketId) {
+    return room?.players.find(
+        player => player.id === socketId
+    );
+}
+
+function publicPlayer(player) {
+    return {
+        id: player.id,
+        name: player.name,
+        connected: player.connected
+    };
+}
+
+function publicPlayers(room) {
+    return room.players.map(publicPlayer);
+}
+
+/* =========================================================
+   ROOM STATE
+   ========================================================= */
+
+function publicGameState(room, socketId) {
+    const game = room.game;
+
+    if (!game) {
+        return null;
+    }
+
+    const player = getPlayer(room, socketId);
+
+    return {
+        phase: game.phase,
+
+        players: publicPlayers(room),
+
+        president: game.president
+            ? publicPlayer(game.president)
+            : null,
+
+        nominee: game.nominee
+            ? publicPlayer(game.nominee)
+            : null,
+
+        youArePresident:
+            game.president?.id === socketId,
+
+        youAreNominee:
+            game.nominee?.id === socketId,
+
+        youVoted:
+            game.votes.has(socketId),
+
+        constitutionalPolicies:
+            game.constitutionalPolicies,
+
+        qajarPolicies:
+            game.qajarPolicies,
+
+        policyDeckCount:
+            game.policyDeck.length,
+
+        currentPlayerId:
+            player?.id || null
+    };
+}
+
+/* =========================================================
+   POLICY DECK
+   ========================================================= */
+
+function createPolicyDeck() {
+    const deck = [];
+
+    /*
+      6 قاجاری
+      11 مشروطه
+    */
+
+    for (let i = 0; i < 6; i++) {
+        deck.push("qajar");
+    }
+
+    for (let i = 0; i < 11; i++) {
+        deck.push("constitutional");
+    }
+
+    return shuffle(deck);
 }
 
 function shuffle(array) {
@@ -55,472 +169,972 @@ function shuffle(array) {
     for (let i = copy.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
 
-        [copy[i], copy[j]] = [
-            copy[j],
-            copy[i]
-        ];
+        [copy[i], copy[j]] =
+            [copy[j], copy[i]];
     }
 
     return copy;
 }
 
-/*
-    دسته سیاست:
-
-    6 کارت مشروطه
-    11 کارت قاجاری
-*/
-function makePolicyDeck() {
-    return shuffle([
-        ...Array(6).fill("constitutional"),
-        ...Array(11).fill("qajar")
-    ]);
-}
-
-/*
-    اطمینان از وجود تعداد کافی کارت
-*/
-function ensureDeck(room, needed = 3) {
-
-    if (room.policyDeck.length >= needed) {
+function ensureDeck(room) {
+    if (!room.game) {
         return;
     }
 
-    if (room.policyDiscard.length > 0) {
+    if (room.game.policyDeck.length < 3) {
+        room.game.policyDeck = shuffle(
+            room.game.discardPile.concat(
+                room.game.policyDeck
+            )
+        );
 
-        room.policyDeck = shuffle([
-            ...room.policyDeck,
-            ...room.policyDiscard
-        ]);
-
-        room.policyDiscard = [];
-    }
-
-    /*
-        اگر هنوز کارت کافی نداریم،
-        یک دسته جدید اضافه می‌کنیم.
-    */
-    while (room.policyDeck.length < needed) {
-
-        room.policyDeck = shuffle([
-            ...room.policyDeck,
-            ...makePolicyDeck()
-        ]);
+        room.game.discardPile = [];
     }
 }
 
-function addMessage(room, type, name, text) {
+function drawPolicies(room, count) {
+    ensureDeck(room);
 
-    room.messages.push({
-        type,
-        name,
-        text
-    });
+    const cards = [];
 
-    if (room.messages.length > 100) {
-        room.messages.shift();
-    }
-}
-
-function getPublicPlayers(room) {
-
-    return room.players.map((player) => ({
-        id: player.id,
-        name: player.name,
-        host: player.host,
-        connected: player.connected !== false
-    }));
-}
-
-function getPresident(room) {
-
-    return room.players[room.presidentIndex] || null;
-}
-
-function getNominee(room) {
-
-    return room.players.find(
-        (player) =>
-            player.id === room.nominatedChancellorId
-    ) || null;
-}
-
-function getPhaseText(phase) {
-
-    const texts = {
-
-        nomination:
-            "انتخاب وزیر",
-
-        vote:
-            "رأی‌گیری",
-
-        president_discard:
-            "صدر یک کارت را کنار می‌گذارد",
-
-        minister_enact:
-            "وزیر یک سیاست را تصویب می‌کند",
-
-        finished:
-            "بازی تمام شد"
-    };
-
-    return texts[phase] || phase;
-}
-
-function buildPublicGameState(room) {
-
-    const president = getPresident(room);
-    const nominee = getNominee(room);
-
-    return {
-
-        roomCode: room.code,
-
-        phase: room.phase,
-
-        phaseText:
-            getPhaseText(room.phase),
-
-        players:
-            getPublicPlayers(room),
-
-        president:
-            president
-                ? {
-                    id: president.id,
-                    name: president.name
-                }
-                : null,
-
-        nominee:
-            nominee
-                ? {
-                    id: nominee.id,
-                    name: nominee.name
-                }
-                : null,
-
-        constitutionalPolicies:
-            room.constitutionalPolicies,
-
-        qajarPolicies:
-            room.qajarPolicies,
-
-        electionFailed:
-            room.electionFailed,
-
-        lastResult:
-            room.lastResult,
-
-        winner:
-            room.winner,
-
-        policyDeckCount:
-            room.policyDeck.length,
-
-        /*
-            فقط تعداد کارت‌های وزیر نمایش داده می‌شود.
-            خود کارت‌ها محرمانه هستند.
-        */
-        ministerCardCount:
-            Array.isArray(room.ministerHand)
-                ? room.ministerHand.length
-                : 0
-    };
-}
-
-function sendGameState(roomCode) {
-
-    const room = rooms.get(roomCode);
-
-    if (!room) {
-        return;
-    }
-
-    const base =
-        buildPublicGameState(room);
-
-    const president =
-        getPresident(room);
-
-    room.players.forEach((player) => {
-
-        if (!player.id) {
-            return;
+    for (let i = 0; i < count; i++) {
+        if (room.game.policyDeck.length === 0) {
+            ensureDeck(room);
         }
 
-        io.to(player.id).emit(
-            "gameState",
-            {
-                ...base,
+        const card =
+            room.game.policyDeck.shift();
 
-                youArePresident:
-                    president?.id === player.id,
+        if (card) {
+            cards.push(card);
+        }
+    }
 
-                youAreNominee:
-                    room.nominatedChancellorId === player.id,
-
-                youVoted:
-                    Object.prototype.hasOwnProperty.call(
-                        room.votes,
-                        player.id
-                    )
-            }
-        );
-    });
+    return cards;
 }
 
-/*
-    نقش‌ها
+/* =========================================================
+   ROLES
+   ========================================================= */
 
-    4 بازیکن:
-    ناصرالدین شاه
-    1 قاجاری
-    2 مشروطه‌خواه
+function assignRoles(players) {
+    const shuffled = shuffle(players);
 
-    5-6 بازیکن:
-    ناصرالدین شاه
-    1 قاجاری
-    بقیه مشروطه‌خواه
+    const result = new Map();
 
-    7-10 بازیکن:
-    ناصرالدین شاه
-    2 قاجاری
-    بقیه مشروطه‌خواه
-*/
-function assignRoles(room) {
+    /*
+      یک ناصر
+      یک یا چند قاجاری
+      بقیه مشروطه‌خواه
+    */
 
-    const count =
-        room.players.length;
-
-    let qajarCount;
-
-    if (count <= 6) {
-        qajarCount = 2;
-    } else {
-        qajarCount = 3;
-    }
-
-    const roles = [
+    result.set(
+        shuffled[0].id,
         ROLE.NASER
-    ];
+    );
+
+    const qajarCount =
+        players.length >= 8 ? 3 :
+        players.length >= 6 ? 2 :
+        1;
+
+    for (let i = 1; i <= qajarCount; i++) {
+        result.set(
+            shuffled[i].id,
+            ROLE.QAJAR
+        );
+    }
 
     for (
-        let i = 1;
-        i < qajarCount;
+        let i = qajarCount + 1;
+        i < shuffled.length;
         i++
     ) {
-        roles.push(ROLE.QAJAR);
-    }
-
-    while (
-        roles.length < count
-    ) {
-        roles.push(
+        result.set(
+            shuffled[i].id,
             ROLE.CONSTITUTIONALIST
         );
     }
 
-    const shuffledRoles =
-        shuffle(roles);
-
-    room.players.forEach(
-        (player, index) => {
-
-            player.role =
-                shuffledRoles[index];
-        }
-    );
+    return result;
 }
 
-function sendPrivateRoles(room) {
+/* =========================================================
+   ROLE DESCRIPTION
+   ========================================================= */
 
-    const qajarPlayers =
-        room.players.filter(
-            (player) =>
-                player.role === ROLE.QAJAR ||
-                player.role === ROLE.NASER
-        );
+function roleDescription(role) {
+    switch (role) {
+        case ROLE.NASER:
+            return "شما ناصرالدین شاه هستید. باید حکومت قاجار را حفظ کنید.";
 
-    room.players.forEach((player) => {
+        case ROLE.QAJAR:
+            return "شما قاجاری هستید. هدف شما پیروزی جناح قاجار است.";
 
-        if (!player.id) {
-            return;
-        }
+        case ROLE.CONSTITUTIONALIST:
+            return "شما مشروطه‌خواه هستید. باید مسیر مشروطه را به پیروزی برسانید.";
 
-        let allies = [];
+        default:
+            return "";
+    }
+}
 
-        if (
-            player.role === ROLE.QAJAR ||
-            player.role === ROLE.NASER
-        ) {
+/* =========================================================
+   ALLIES
+   ========================================================= */
 
-            allies =
-                qajarPlayers
-                    .filter(
-                        (ally) =>
-                            ally.id !== player.id
-                    )
-                    .map((ally) => ({
-                        name: ally.name,
+function getAllies(room, player) {
+    if (!room.game) {
+        return [];
+    }
 
-                        role:
-                            ally.role === ROLE.NASER
-                                ? "ناصرالدین شاه"
-                                : "قاجاری"
-                    }));
-        }
+    if (
+        player.role === ROLE.CONSTITUTIONALIST
+    ) {
+        return [];
+    }
 
-        io.to(player.id).emit(
-            "roleAssigned",
-            {
-                role: player.role,
-                allies
-            }
-        );
+    return room.players
+        .filter(other =>
+            other.id !== player.id &&
+            (
+                other.role === ROLE.QAJAR ||
+                other.role === ROLE.NASER
+            )
+        )
+        .map(publicPlayer);
+}
+
+/* =========================================================
+   SEND ROLE
+   ========================================================= */
+
+function sendRole(room, player) {
+    const socket =
+        io.sockets.sockets.get(player.id);
+
+    if (!socket) {
+        return;
+    }
+
+    socket.emit("roleAssigned", {
+        role: player.role,
+        description: roleDescription(player.role),
+        allies: getAllies(room, player)
     });
 }
 
-function startNextRound(room) {
+/* =========================================================
+   SEND GAME STATE
+   ========================================================= */
 
-    room.nominatedChancellorId =
-        null;
+function broadcastGameState(room) {
+    for (const player of room.players) {
+        const socket =
+            io.sockets.sockets.get(player.id);
 
-    room.votes = {};
+        if (!socket) {
+            continue;
+        }
 
-    room.presidentHand = [];
-
-    room.ministerHand = [];
-
-    room.lastResult = null;
-
-    room.phase = "nomination";
-
-    sendGameState(room.code);
+        socket.emit(
+            "gameState",
+            publicGameState(
+                room,
+                player.id
+            )
+        );
+    }
 }
 
-function finishGame(
-    room,
-    faction,
-    reason
-) {
+/* =========================================================
+   CHAT
+   ========================================================= */
 
-    room.winner = {
-        faction,
-        reason
+function broadcastLobbyChat(
+    room,
+    player,
+    message
+) {
+    io.to(room.code).emit(
+        "chatMessage",
+        {
+            name: player.name,
+            message
+        }
+    );
+}
+
+function broadcastGameChat(
+    room,
+    player,
+    message
+) {
+    io.to(room.code).emit(
+        "gameChatMessage",
+        {
+            name: player.name,
+            message
+        }
+    );
+}
+
+/* =========================================================
+   ROOM STATE
+   ========================================================= */
+
+function broadcastRoomState(room) {
+    io.to(room.code).emit(
+        "roomState",
+        {
+            roomCode: room.code,
+            players: publicPlayers(room)
+        }
+    );
+}
+
+/* =========================================================
+   GAME START
+   ========================================================= */
+
+function startGame(room) {
+    if (room.players.length < MIN_PLAYERS) {
+        return false;
+    }
+
+    const roles =
+        assignRoles(room.players);
+
+    for (const player of room.players) {
+        player.role =
+            roles.get(player.id);
+    }
+
+    room.game = {
+        phase: PHASE.NOMINATION,
+
+        policyDeck:
+            createPolicyDeck(),
+
+        discardPile: [],
+
+        constitutionalPolicies: 0,
+
+        qajarPolicies: 0,
+
+        presidentIndex: 0,
+
+        president:
+            room.players[0],
+
+        nominee: null,
+
+        votes: new Map(),
+
+        presidentHand: [],
+
+        ministerHand: [],
+
+        nominationTimer: null,
+
+        electionTracker: 0
     };
 
-    room.phase = "finished";
-
-    addMessage(
-        room,
-        "system",
-        "دربار",
-        reason
-    );
+    for (const player of room.players) {
+        sendRole(room, player);
+    }
 
     io.to(room.code).emit(
-        "gameOver",
-        room.winner
+        "gameStarted",
+        {
+            started: true
+        }
     );
 
-    sendGameState(room.code);
+    broadcastGameState(room);
+
+    return true;
 }
 
-io.on("connection", (socket) => {
+/* =========================================================
+   NEXT PRESIDENT
+   ========================================================= */
 
-    console.log(
-        "بازیکن متصل شد:",
-        socket.id
+function moveToNextPresident(room) {
+    if (!room.game) {
+        return;
+    }
+
+    const players = room.players;
+
+    if (!players.length) {
+        return;
+    }
+
+    room.game.presidentIndex =
+        (
+            room.game.presidentIndex + 1
+        ) % players.length;
+
+    room.game.president =
+        players[
+            room.game.presidentIndex
+        ];
+
+    room.game.nominee = null;
+
+    room.game.votes =
+        new Map();
+
+    room.game.phase =
+        PHASE.NOMINATION;
+
+    broadcastGameState(room);
+}
+
+/* =========================================================
+   NOMINATION
+   ========================================================= */
+
+function nominate(room, socket, nomineeId) {
+    const game = room.game;
+
+    if (!game) {
+        return;
+    }
+
+    if (
+        game.phase !== PHASE.NOMINATION
+    ) {
+        socket.emit(
+            "errorMessage",
+            {
+                message:
+                    "الان زمان انتخاب وزیر نیست."
+            }
+        );
+
+        return;
+    }
+
+    if (
+        game.president?.id !== socket.id
+    ) {
+        socket.emit(
+            "errorMessage",
+            {
+                message:
+                    "فقط صدر می‌تواند وزیر انتخاب کند."
+            }
+        );
+
+        return;
+    }
+
+    const nominee =
+        room.players.find(
+            player =>
+                player.id === nomineeId
+        );
+
+    if (!nominee) {
+        socket.emit(
+            "errorMessage",
+            {
+                message:
+                    "بازیکن انتخاب‌شده پیدا نشد."
+            }
+        );
+
+        return;
+    }
+
+    if (
+        nominee.id === game.president.id
+    ) {
+        socket.emit(
+            "errorMessage",
+            {
+                message:
+                    "صدر نمی‌تواند خودش وزیر باشد."
+            }
+        );
+
+        return;
+    }
+
+    game.nominee = nominee;
+    game.votes = new Map();
+
+    game.phase = PHASE.VOTE;
+
+    broadcastGameState(room);
+}
+
+/* =========================================================
+   VOTE
+   ========================================================= */
+
+function vote(room, socket, value) {
+    const game = room.game;
+
+    if (!game) {
+        return;
+    }
+
+    if (game.phase !== PHASE.VOTE) {
+        return;
+    }
+
+    if (
+        value !== "yes" &&
+        value !== "no"
+    ) {
+        return;
+    }
+
+    if (game.votes.has(socket.id)) {
+        return;
+    }
+
+    game.votes.set(
+        socket.id,
+        value
+    );
+
+    broadcastGameState(room);
+
+    if (
+        game.votes.size >=
+        room.players.length
+    ) {
+        resolveVote(room);
+    }
+}
+
+/* =========================================================
+   RESOLVE VOTE
+   ========================================================= */
+
+function resolveVote(room) {
+    const game = room.game;
+
+    let yes = 0;
+    let no = 0;
+
+    for (const vote of game.votes.values()) {
+        if (vote === "yes") {
+            yes++;
+        } else {
+            no++;
+        }
+    }
+
+    io.to(room.code).emit(
+        "publicResult",
+        {
+            type: "vote",
+            yes,
+            no
+        }
+    );
+
+    if (yes > no) {
+        game.electionTracker = 0;
+
+        game.phase =
+            PHASE.PRESIDENT_DISCARD;
+
+        game.presidentHand =
+            drawPolicies(room, 3);
+
+        broadcastGameState(room);
+
+        const presidentSocket =
+            io.sockets.sockets.get(
+                game.president.id
+            );
+
+        if (presidentSocket) {
+            presidentSocket.emit(
+                "policyDrawn",
+                {
+                    cards:
+                        game.presidentHand
+                }
+            );
+        }
+
+        return;
+    }
+
+    game.electionTracker++;
+
+    if (game.electionTracker >= 3) {
+        enactTopDeck(room);
+        return;
+    }
+
+    moveToNextPresident(room);
+}
+
+/* =========================================================
+   PRESIDENT DISCARD
+   ========================================================= */
+
+function presidentDiscard(
+    room,
+    socket,
+    index
+) {
+    const game = room.game;
+
+    if (
+        game.phase !==
+        PHASE.PRESIDENT_DISCARD
+    ) {
+        return;
+    }
+
+    if (
+        game.president?.id !== socket.id
+    ) {
+        return;
+    }
+
+    index = Number(index);
+
+    if (
+        !Number.isInteger(index) ||
+        index < 0 ||
+        index >= game.presidentHand.length
+    ) {
+        socket.emit(
+            "errorMessage",
+            {
+                message:
+                    "انتخاب کارت نامعتبر است."
+            }
+        );
+
+        return;
+    }
+
+    const discarded =
+        game.presidentHand[index];
+
+    game.discardPile.push(
+        discarded
+    );
+
+    const ministerHand =
+        game.presidentHand.filter(
+            (_, i) => i !== index
+        );
+
+    game.presidentHand = [];
+
+    game.ministerHand =
+        ministerHand;
+
+    game.phase =
+        PHASE.MINISTER_ENACT;
+
+    broadcastGameState(room);
+
+    const ministerSocket =
+        io.sockets.sockets.get(
+            game.nominee.id
+        );
+
+    if (ministerSocket) {
+        ministerSocket.emit(
+            "ministerPolicy",
+            {
+                cards: ministerHand
+            }
+        );
+    }
+}
+
+/* =========================================================
+   MINISTER ENACT
+   ========================================================= */
+
+function ministerEnact(
+    room,
+    socket,
+    index
+) {
+    const game = room.game;
+
+    if (
+        game.phase !==
+        PHASE.MINISTER_ENACT
+    ) {
+        return;
+    }
+
+    if (
+        game.nominee?.id !== socket.id
+    ) {
+        return;
+    }
+
+    index = Number(index);
+
+    if (
+        !Number.isInteger(index) ||
+        index < 0 ||
+        index >= game.ministerHand.length
+    ) {
+        socket.emit(
+            "errorMessage",
+            {
+                message:
+                    "انتخاب کارت نامعتبر است."
+            }
+        );
+
+        return;
+    }
+
+    const enacted =
+        game.ministerHand[index];
+
+    for (
+        let i = 0;
+        i < game.ministerHand.length;
+        i++
+    ) {
+        if (i !== index) {
+            game.discardPile.push(
+                game.ministerHand[i]
+            );
+        }
+    }
+
+    game.ministerHand = [];
+
+    if (enacted === "constitutional") {
+        game.constitutionalPolicies++;
+    } else {
+        game.qajarPolicies++;
+    }
+
+    io.to(room.code).emit(
+        "publicResult",
+        {
+            type: "policy",
+            policy: enacted,
+            constitutionalPolicies:
+                game.constitutionalPolicies,
+            qajarPolicies:
+                game.qajarPolicies
+        }
     );
 
     /*
-        ساخت اتاق
+      شرط برد مشروطه
     */
+
+    if (
+        game.constitutionalPolicies >= 5
+    ) {
+        finishGame(
+            room,
+            "constitutional",
+            "پنج سیاست مشروطه تصویب شد."
+        );
+
+        return;
+    }
+
+    /*
+      شرط برد قاجار
+    */
+
+    if (
+        game.qajarPolicies >= 6
+    ) {
+        finishGame(
+            room,
+            "qajar",
+            "شش سیاست قاجاری تصویب شد."
+        );
+
+        return;
+    }
+
+    /*
+      اگر سه سیاست قاجاری تصویب شده
+      و ناصر وزیر بوده، قاجار پیروز می‌شود.
+    */
+
+    if (
+        game.qajarPolicies >= 3 &&
+        game.nominee?.role === ROLE.NASER
+    ) {
+        finishGame(
+            room,
+            "qajar",
+            "ناصرالدین شاه به مقام وزارت رسید."
+        );
+
+        return;
+    }
+
+    moveToNextPresident(room);
+}
+
+/* =========================================================
+   TOP DECK
+   ========================================================= */
+
+function enactTopDeck(room) {
+    const game = room.game;
+
+    const card =
+        drawPolicies(room, 1)[0];
+
+    if (!card) {
+        return;
+    }
+
+    if (card === "constitutional") {
+        game.constitutionalPolicies++;
+    } else {
+        game.qajarPolicies++;
+    }
+
+    io.to(room.code).emit(
+        "publicResult",
+        {
+            type: "automaticPolicy",
+            policy: card
+        }
+    );
+
+    if (
+        game.constitutionalPolicies >= 5
+    ) {
+        finishGame(
+            room,
+            "constitutional",
+            "پنج سیاست مشروطه تصویب شد."
+        );
+
+        return;
+    }
+
+    if (
+        game.qajarPolicies >= 6
+    ) {
+        finishGame(
+            room,
+            "qajar",
+            "شش سیاست قاجاری تصویب شد."
+        );
+
+        return;
+    }
+
+    moveToNextPresident(room);
+}
+
+/* =========================================================
+   GAME OVER
+   ========================================================= */
+
+function finishGame(
+    room,
+    winner,
+    reason
+) {
+    if (!room.game) {
+        return;
+    }
+
+    room.game.phase =
+        PHASE.GAME_OVER;
+
+    io.to(room.code).emit(
+        "gameOver",
+        {
+            winner,
+            reason
+        }
+    );
+
+    broadcastGameState(room);
+}
+
+/* =========================================================
+   SOCKET CONNECTION
+   ========================================================= */
+
+io.on("connection", socket => {
+    console.log(
+        "Connected:",
+        socket.id
+    );
+
+    /* =====================================================
+       CREATE ROOM
+       ===================================================== */
+
     socket.on(
         "createRoom",
         ({ name }) => {
+            name = cleanName(name);
 
-            const cleanName =
-                String(name || "")
-                    .trim()
-                    .slice(0, 20);
-
-            if (!cleanName) {
-
+            if (!name) {
                 socket.emit(
                     "errorMessage",
-                    "نام بازیکن را وارد کن."
+                    {
+                        message:
+                            "نام بازیکن الزامی است."
+                    }
                 );
 
                 return;
             }
 
-            const roomCode =
-                createRoomCode();
+            const code =
+                generateRoomCode();
 
-            const room = {
-
-                code: roomCode,
-
-                started: false,
-
-                players: [
-                    {
-                        id: socket.id,
-                        name: cleanName,
-                        host: true,
-                        role: null,
-                        connected: true
-                    }
-                ],
-
-                messages: [],
-
-                presidentIndex: 0,
-
-                nominatedChancellorId: null,
-
-                votes: {},
-
-                phase: "lobby",
-
-                electionFailed: 0,
-
-                lastResult: null,
-
-                winner: null,
-
-                constitutionalPolicies: 0,
-
-                qajarPolicies: 0,
-
-                policyDeck: [],
-
-                policyDiscard: [],
-
-                presidentHand: [],
-
-                ministerHand: []
+            const player = {
+                id: socket.id,
+                name,
+                role: null,
+                connected: true
             };
 
-            rooms.set(
-                roomCode,
-                room
+            const room = {
+                code,
+                players: [player],
+                game: null
+            };
+
+            rooms.set(code, room);
+
+            socket.data.roomCode =
+                code;
+
+            socket.join(code);
+
+            socket.emit(
+                "roomCreated",
+                {
+                    roomCode: code
+                }
             );
 
-            socket.join(roomCode);
+            broadcastRoomState(room);
+        }
+    );
+
+    /* =====================================================
+       JOIN ROOM
+       ===================================================== */
+
+    socket.on(
+        "joinRoom",
+        ({ roomCode, name }) => {
+            roomCode =
+                String(roomCode || "")
+                    .replace(/\D/g, "")
+                    .slice(0, 4);
+
+            name = cleanName(name);
+
+            const room =
+                rooms.get(roomCode);
+
+            if (!room) {
+                socket.emit(
+                    "errorMessage",
+                    {
+                        message:
+                            "اتاق پیدا نشد."
+                    }
+                );
+
+                return;
+            }
+
+            if (room.game) {
+                socket.emit(
+                    "errorMessage",
+                    {
+                        message:
+                            "این بازی شروع شده است."
+                    }
+                );
+
+                return;
+            }
+
+            if (
+                room.players.length >=
+                MAX_PLAYERS
+            ) {
+                socket.emit(
+                    "errorMessage",
+                    {
+                        message:
+                            "اتاق پر است."
+                    }
+                );
+
+                return;
+            }
+
+            if (!name) {
+                socket.emit(
+                    "errorMessage",
+                    {
+                        message:
+                            "نام بازیکن الزامی است."
+                    }
+                );
+
+                return;
+            }
+
+            const duplicate =
+                room.players.some(
+                    player =>
+                        player.name
+                            .toLowerCase() ===
+                        name.toLowerCase()
+                );
+
+            if (duplicate) {
+                socket.emit(
+                    "errorMessage",
+                    {
+                        message:
+                            "این نام قبلاً استفاده شده است."
+                    }
+                );
+
+                return;
+            }
+
+            const player = {
+                id: socket.id,
+                name,
+                role: null,
+                connected: true
+            };
+
+            room.players.push(player);
 
             socket.data.roomCode =
                 roomCode;
 
-            addMessage(
-                room,
-                "system",
-                "دربار",
-                `${cleanName} اتاق را ساخت.`
-            );
+            socket.join(roomCode);
 
             socket.emit(
                 "roomCreated",
@@ -529,1129 +1143,337 @@ io.on("connection", (socket) => {
                 }
             );
 
-            sendRoomState(
-                roomCode
-            );
+            broadcastRoomState(room);
         }
     );
 
-    /*
-        ورود به اتاق
-    */
+    /* =====================================================
+       START GAME
+       ===================================================== */
+
     socket.on(
-        "joinRoom",
-        ({ name, roomCode }) => {
-
-            const cleanName =
-                String(name || "")
-                    .trim()
-                    .slice(0, 20);
-
-            const cleanCode =
-                String(roomCode || "")
-                    .trim();
-
-            if (!cleanName) {
-
-                socket.emit(
-                    "errorMessage",
-                    "نام بازیکن را وارد کن."
-                );
-
-                return;
-            }
-
-            if (
-                !/^\d{4}$/.test(
-                    cleanCode
-                )
-            ) {
-
-                socket.emit(
-                    "errorMessage",
-                    "کد اتاق باید ۴ رقمی باشد."
-                );
-
-                return;
-            }
-
+        "startGame",
+        () => {
             const room =
-                rooms.get(cleanCode);
+                getRoom(socket);
 
             if (!room) {
-
-                socket.emit(
-                    "errorMessage",
-                    "این اتاق وجود ندارد."
-                );
-
-                return;
-            }
-
-            if (room.started) {
-
-                socket.emit(
-                    "errorMessage",
-                    "بازی شروع شده است."
-                );
-
-                return;
-            }
-
-            if (
-                room.players.length >= 10
-            ) {
-
-                socket.emit(
-                    "errorMessage",
-                    "اتاق پر است."
-                );
-
-                return;
-            }
-
-            const duplicate =
-                room.players.some(
-                    (player) =>
-                        player.name.toLowerCase() ===
-                        cleanName.toLowerCase()
-                );
-
-            if (duplicate) {
-
-                socket.emit(
-                    "errorMessage",
-                    "این نام قبلاً استفاده شده."
-                );
-
-                return;
-            }
-
-            room.players.push({
-                id: socket.id,
-                name: cleanName,
-                host: false,
-                role: null,
-                connected: true
-            });
-
-            socket.join(cleanCode);
-
-            socket.data.roomCode =
-                cleanCode;
-
-            addMessage(
-                room,
-                "system",
-                "دربار",
-                `${cleanName} وارد اتاق شد.`
-            );
-
-            sendRoomState(
-                cleanCode
-            );
-        }
-    );
-
-    /*
-        چت لابی
-    */
-    socket.on(
-        "lobbyChat",
-        ({ text }) => {
-
-            const roomCode =
-                socket.data.roomCode;
-
-            const room =
-                rooms.get(roomCode);
-
-            if (
-                !room ||
-                room.started
-            ) {
                 return;
             }
 
             const player =
-                room.players.find(
-                    (p) =>
-                        p.id === socket.id
+                getPlayer(
+                    room,
+                    socket.id
                 );
 
             if (!player) {
                 return;
             }
 
-            const cleanText =
-                String(text || "")
-                    .trim()
-                    .slice(0, 300);
+            if (
+                room.players[0].id !==
+                socket.id
+            ) {
+                socket.emit(
+                    "errorMessage",
+                    {
+                        message:
+                            "فقط سازنده اتاق می‌تواند بازی را شروع کند."
+                    }
+                );
 
-            if (!cleanText) {
                 return;
             }
 
-            const message = {
-                type: "chat",
-                name: player.name,
-                text: cleanText
-            };
-
-            room.messages.push(message);
-
             if (
-                room.messages.length > 100
+                room.players.length <
+                MIN_PLAYERS
             ) {
-                room.messages.shift();
+                socket.emit(
+                    "errorMessage",
+                    {
+                        message:
+                            `حداقل ${MIN_PLAYERS} بازیکن لازم است.`
+                    }
+                );
+
+                return;
             }
 
-            io.to(roomCode).emit(
-                "chatMessage",
+            startGame(room);
+        }
+    );
+
+    /* =====================================================
+       NOMINATE
+       ===================================================== */
+
+    socket.on(
+        "nominate",
+        ({ nomineeId }) => {
+            const room =
+                getRoom(socket);
+
+            if (!room) {
+                return;
+            }
+
+            nominate(
+                room,
+                socket,
+                nomineeId
+            );
+        }
+    );
+
+    /* =====================================================
+       VOTE
+       ===================================================== */
+
+    socket.on(
+        "vote",
+        ({ vote: value }) => {
+            const room =
+                getRoom(socket);
+
+            if (!room) {
+                return;
+            }
+
+            vote(
+                room,
+                socket,
+                value
+            );
+        }
+    );
+
+    /* =====================================================
+       PRESIDENT DISCARD
+       ===================================================== */
+
+    socket.on(
+        "presidentDiscard",
+        ({ index }) => {
+            const room =
+                getRoom(socket);
+
+            if (!room) {
+                return;
+            }
+
+            presidentDiscard(
+                room,
+                socket,
+                index
+            );
+        }
+    );
+
+    /* =====================================================
+       MINISTER ENACT
+       ===================================================== */
+
+    socket.on(
+        "ministerEnact",
+        ({ index }) => {
+            const room =
+                getRoom(socket);
+
+            if (!room) {
+                return;
+            }
+
+            ministerEnact(
+                room,
+                socket,
+                index
+            );
+        }
+    );
+
+    /* =====================================================
+       LOBBY CHAT
+       ===================================================== */
+
+    socket.on(
+        "chatMessage",
+        ({ message }) => {
+            const room =
+                getRoom(socket);
+
+            if (!room) {
+                return;
+            }
+
+            const player =
+                getPlayer(
+                    room,
+                    socket.id
+                );
+
+            if (!player) {
+                return;
+            }
+
+            message =
+                String(message || "")
+                    .trim()
+                    .slice(0, 300);
+
+            if (!message) {
+                return;
+            }
+
+            broadcastLobbyChat(
+                room,
+                player,
                 message
             );
         }
     );
 
-    /*
-        شروع بازی
-    */
+    /* =====================================================
+       GAME CHAT
+       ===================================================== */
+
     socket.on(
-        "startGame",
-        () => {
-
-            const roomCode =
-                socket.data.roomCode;
-
+        "gameChatMessage",
+        ({ message }) => {
             const room =
-                rooms.get(roomCode);
+                getRoom(socket);
 
             if (!room) {
                 return;
             }
 
             const player =
-                room.players.find(
-                    (p) =>
-                        p.id === socket.id
-                );
-
-            if (!player?.host) {
-
-                socket.emit(
-                    "errorMessage",
-                    "فقط سازنده اتاق می‌تواند بازی را شروع کند."
-                );
-
-                return;
-            }
-
-            /*
-                مهم:
-                حالا 4 نفر کافی است.
-            */
-            if (
-                room.players.length < 4
-            ) {
-
-                socket.emit(
-                    "errorMessage",
-                    "برای شروع بازی حداقل ۴ بازیکن لازم است."
-                );
-
-                return;
-            }
-
-            room.started = true;
-
-            room.phase =
-                "nomination";
-
-            room.presidentIndex = 0;
-
-            room.nominatedChancellorId =
-                null;
-
-            room.votes = {};
-
-            room.electionFailed = 0;
-
-            room.lastResult = null;
-
-            room.winner = null;
-
-            room.constitutionalPolicies = 0;
-
-            room.qajarPolicies = 0;
-
-            room.policyDeck =
-                makePolicyDeck();
-
-            room.policyDiscard = [];
-
-            room.presidentHand = [];
-
-            room.ministerHand = [];
-
-            assignRoles(room);
-
-            sendPrivateRoles(room);
-
-            addMessage(
-                room,
-                "system",
-                "دربار",
-                "بازی آغاز شد. اولین صدر مشخص شد."
-            );
-
-            io.to(roomCode).emit(
-                "gameStarted"
-            );
-
-            sendGameState(
-                roomCode
-            );
-        }
-    );
-
-    /*
-        معرفی وزیر
-    */
-    socket.on(
-        "nominateChancellor",
-        ({ playerId }) => {
-
-            const roomCode =
-                socket.data.roomCode;
-
-            const room =
-                rooms.get(roomCode);
-
-            if (
-                !room ||
-                !room.started ||
-                room.phase !== "nomination"
-            ) {
-                return;
-            }
-
-            const president =
-                getPresident(room);
-
-            if (
-                !president ||
-                president.id !== socket.id
-            ) {
-
-                socket.emit(
-                    "errorMessage",
-                    "فقط صدر می‌تواند وزیر انتخاب کند."
-                );
-
-                return;
-            }
-
-            if (
-                playerId === president.id
-            ) {
-
-                socket.emit(
-                    "errorMessage",
-                    "صدر نمی‌تواند خودش را وزیر انتخاب کند."
-                );
-
-                return;
-            }
-
-            const nominee =
-                room.players.find(
-                    (p) =>
-                        p.id === playerId
-                );
-
-            if (!nominee) {
-                return;
-            }
-
-            room.nominatedChancellorId =
-                nominee.id;
-
-            room.votes = {};
-
-            room.lastResult = null;
-
-            room.phase = "vote";
-
-            addMessage(
-                room,
-                "system",
-                "دربار",
-                `${president.name}، ${nominee.name} را برای وزارت معرفی کرد.`
-            );
-
-            sendGameState(
-                roomCode
-            );
-        }
-    );
-
-    /*
-        رأی‌گیری
-    */
-    socket.on(
-        "castVote",
-        ({ vote }) => {
-
-            const roomCode =
-                socket.data.roomCode;
-
-            const room =
-                rooms.get(roomCode);
-
-            if (
-                !room ||
-                !room.started ||
-                room.phase !== "vote"
-            ) {
-                return;
-            }
-
-            if (
-                vote !== "yes" &&
-                vote !== "no"
-            ) {
-                return;
-            }
-
-            const player =
-                room.players.find(
-                    (p) =>
-                        p.id === socket.id
-                );
-
-            if (!player) {
-                return;
-            }
-
-            if (
-                Object.prototype.hasOwnProperty.call(
-                    room.votes,
+                getPlayer(
+                    room,
                     socket.id
-                )
-            ) {
-
-                socket.emit(
-                    "errorMessage",
-                    "قبلاً رأی داده‌ای."
-                );
-
-                return;
-            }
-
-            room.votes[socket.id] =
-                vote;
-
-            sendGameState(
-                roomCode
-            );
-
-            if (
-                Object.keys(room.votes).length !==
-                room.players.length
-            ) {
-                return;
-            }
-
-            const yesVotes =
-                Object.values(room.votes)
-                    .filter(
-                        (v) => v === "yes"
-                    )
-                    .length;
-
-            const noVotes =
-                Object.values(room.votes)
-                    .filter(
-                        (v) => v === "no"
-                    )
-                    .length;
-
-            /*
-                در 4 نفر:
-                3-1 یا 4-0 قبول
-                2-2 رد
-            */
-            const approved =
-                yesVotes > noVotes;
-
-            const president =
-                getPresident(room);
-
-            const nominee =
-                getNominee(room);
-
-            room.lastResult = {
-                approved,
-                yesVotes,
-                noVotes,
-                presidentName:
-                    president?.name || "",
-                nomineeName:
-                    nominee?.name || ""
-            };
-
-            /*
-                دولت رد شد
-            */
-            if (!approved) {
-
-                room.electionFailed++;
-
-                addMessage(
-                    room,
-                    "system",
-                    "دربار",
-                    `دولت رد شد: ${yesVotes} موافق و ${noVotes} مخالف.`
-                );
-
-                room.presidentIndex =
-                    (
-                        room.presidentIndex + 1
-                    ) %
-                    room.players.length;
-
-                room.nominatedChancellorId =
-                    null;
-
-                room.votes = {};
-
-                room.phase =
-                    "nomination";
-
-                sendGameState(
-                    roomCode
-                );
-
-                return;
-            }
-
-            /*
-                دولت قبول شد
-            */
-            room.electionFailed = 0;
-
-            /*
-                قانون ناصرالدین شاه
-            */
-            if (
-                room.qajarPolicies >= 3 &&
-                nominee?.role === ROLE.NASER
-            ) {
-
-                finishGame(
-                    room,
-                    "qajar",
-                    "👑 قاجاریان پیروز شدند؛ ناصرالدین شاه پس از ۳ سیاست قاجاری وزیر شد."
-                );
-
-                return;
-            }
-
-            /*
-                شروع مرحله صدر
-            */
-
-            room.phase =
-                "president_discard";
-
-            room.presidentHand = [];
-
-            room.ministerHand = [];
-
-            /*
-                بسیار مهم:
-                صدر باید 3 کارت بگیرد.
-            */
-            ensureDeck(room, 3);
-
-            room.presidentHand = [
-                room.policyDeck.pop(),
-                room.policyDeck.pop(),
-                room.policyDeck.pop()
-            ];
-
-            addMessage(
-                room,
-                "system",
-                "دربار",
-                `دولت تأیید شد. سه کارت سیاست به ${president.name} رسید.`
-            );
-
-            /*
-                فقط صدر کارت‌ها را می‌بیند.
-            */
-            io.to(president.id).emit(
-                "policyDrawn",
-                {
-                    cards:
-                        room.presidentHand
-                }
-            );
-
-            sendGameState(
-                roomCode
-            );
-        }
-    );
-
-    /*
-        صدر یک کارت از سه کارت حذف می‌کند
-    */
-    socket.on(
-        "presidentDiscard",
-        ({ index }) => {
-
-            const roomCode =
-                socket.data.roomCode;
-
-            const room =
-                rooms.get(roomCode);
-
-            if (
-                !room ||
-                room.phase !== "president_discard"
-            ) {
-                return;
-            }
-
-            const president =
-                getPresident(room);
-
-            if (
-                !president ||
-                president.id !== socket.id
-            ) {
-
-                socket.emit(
-                    "errorMessage",
-                    "فقط صدر می‌تواند کارت کنار بگذارد."
-                );
-
-                return;
-            }
-
-            if (
-                !Array.isArray(
-                    room.presidentHand
-                ) ||
-                room.presidentHand.length !== 3
-            ) {
-
-                socket.emit(
-                    "errorMessage",
-                    "سه کارت صدر آماده نیستند."
-                );
-
-                return;
-            }
-
-            const discardIndex =
-                Number(index);
-
-            if (
-                ![0, 1, 2].includes(
-                    discardIndex
-                )
-            ) {
-                return;
-            }
-
-            /*
-                کارت حذف‌شده
-            */
-            const discarded =
-                room.presidentHand[
-                    discardIndex
-                ];
-
-            /*
-                دو کارت باقی‌مانده
-            */
-            const remaining =
-                room.presidentHand.filter(
-                    (_, i) =>
-                        i !== discardIndex
-                );
-
-            /*
-                کارت حذف‌شده وارد discard می‌شود
-            */
-            room.policyDiscard.push(
-                discarded
-            );
-
-            /*
-                دو کارت به وزیر
-            */
-            room.ministerHand =
-                remaining;
-
-            room.presidentHand = [];
-
-            room.phase =
-                "minister_enact";
-
-            const nominee =
-                getNominee(room);
-
-            if (!nominee) {
-
-                room.ministerHand = [];
-
-                room.phase =
-                    "nomination";
-
-                room.nominatedChancellorId =
-                    null;
-
-                sendGameState(
-                    roomCode
-                );
-
-                return;
-            }
-
-            addMessage(
-                room,
-                "system",
-                "دربار",
-                "صدر یک کارت را کنار گذاشت؛ دو کارت باقی‌مانده به وزیر رسید."
-            );
-
-            /*
-                دو کارت به وزیر
-            */
-            io.to(nominee.id).emit(
-                "ministerPolicy",
-                {
-                    cards:
-                        room.ministerHand
-                }
-            );
-
-            sendGameState(
-                roomCode
-            );
-        }
-    );
-
-    /*
-        وزیر یکی از دو کارت را انتخاب می‌کند
-    */
-    socket.on(
-        "ministerEnact",
-        ({ index }) => {
-
-            const roomCode =
-                socket.data.roomCode;
-
-            const room =
-                rooms.get(roomCode);
-
-            if (
-                !room ||
-                room.phase !== "minister_enact"
-            ) {
-                return;
-            }
-
-            const nominee =
-                getNominee(room);
-
-            if (
-                !nominee ||
-                nominee.id !== socket.id
-            ) {
-
-                socket.emit(
-                    "errorMessage",
-                    "فقط وزیر می‌تواند کارت را تصویب کند."
-                );
-
-                return;
-            }
-
-            if (
-                !Array.isArray(
-                    room.ministerHand
-                ) ||
-                room.ministerHand.length !== 2
-            ) {
-
-                socket.emit(
-                    "errorMessage",
-                    "دو کارت وزیر آماده نیستند."
-                );
-
-                return;
-            }
-
-            const chosenIndex =
-                Number(index);
-
-            if (
-                ![0, 1].includes(
-                    chosenIndex
-                )
-            ) {
-                return;
-            }
-
-            const enacted =
-                room.ministerHand[
-                    chosenIndex
-                ];
-
-            const discarded =
-                room.ministerHand[
-                    chosenIndex === 0
-                        ? 1
-                        : 0
-                ];
-
-            /*
-                کارت انتخاب‌شده تصویب می‌شود.
-                کارت دیگر هم کنار گذاشته می‌شود.
-            */
-            room.policyDiscard.push(
-                discarded,
-                enacted
-            );
-
-            room.ministerHand = [];
-
-            if (
-                enacted === "constitutional"
-            ) {
-
-                room.constitutionalPolicies++;
-
-            } else if (
-                enacted === "qajar"
-            ) {
-
-                room.qajarPolicies++;
-
-            } else {
-
-                socket.emit(
-                    "errorMessage",
-                    "کارت سیاست نامعتبر است."
-                );
-
-                return;
-            }
-
-            const label =
-                enacted === "constitutional"
-                    ? "🟦 سیاست مشروطه"
-                    : "🟥 سیاست قاجاری";
-
-            addMessage(
-                room,
-                "system",
-                "دربار",
-                `${label} تصویب شد.`
-            );
-
-            io.to(roomCode).emit(
-                "narrator",
-                {
-                    text:
-                        `راوی دربار: ${label} تصویب شد.`
-                }
-            );
-
-            /*
-                پیروزی مشروطه
-            */
-            if (
-                room.constitutionalPolicies >= 5
-            ) {
-
-                finishGame(
-                    room,
-                    "constitutionalist",
-                    "🟦 مشروطه‌خواهان با تصویب ۵ سیاست پیروز شدند."
-                );
-
-                return;
-            }
-
-            /*
-                پیروزی قاجار
-            */
-            if (
-                room.qajarPolicies >= 6
-            ) {
-
-                finishGame(
-                    room,
-                    "qajar",
-                    "🟥 قاجاریان با تصویب ۶ سیاست پیروز شدند."
-                );
-
-                return;
-            }
-
-            /*
-                صدر بعدی
-            */
-            room.presidentIndex =
-                (
-                    room.presidentIndex + 1
-                ) %
-                room.players.length;
-
-            startNextRound(room);
-        }
-    );
-
-    /*
-        چت داخل بازی
-    */
-    socket.on(
-        "gameChat",
-        ({ text }) => {
-
-            const roomCode =
-                socket.data.roomCode;
-
-            const room =
-                rooms.get(roomCode);
-
-            if (
-                !room ||
-                !room.started
-            ) {
-                return;
-            }
-
-            const player =
-                room.players.find(
-                    (p) =>
-                        p.id === socket.id
                 );
 
             if (!player) {
                 return;
             }
 
-            const cleanText =
-                String(text || "")
+            message =
+                String(message || "")
                     .trim()
                     .slice(0, 300);
 
-            if (!cleanText) {
+            if (!message) {
                 return;
             }
 
-            io.to(roomCode).emit(
-                "gameChatMessage",
-                {
-                    type: "chat",
-                    name: player.name,
-                    text: cleanText
-                }
+            broadcastGameChat(
+                room,
+                player,
+                message
             );
         }
     );
 
-    /*
-        قطع اتصال
-    */
+    /* =====================================================
+       DISCONNECT
+       ===================================================== */
+
     socket.on(
         "disconnect",
         () => {
-
-            const roomCode =
-                socket.data.roomCode;
-
-            if (!roomCode) {
-                return;
-            }
-
             const room =
-                rooms.get(roomCode);
+                getRoom(socket);
 
             if (!room) {
                 return;
             }
 
-            const leavingIndex =
+            const index =
                 room.players.findIndex(
-                    (p) =>
-                        p.id === socket.id
+                    player =>
+                        player.id ===
+                        socket.id
                 );
 
-            if (
-                leavingIndex === -1
-            ) {
+            if (index === -1) {
                 return;
             }
 
-            const leavingPlayer =
-                room.players[
-                    leavingIndex
-                ];
-
             room.players.splice(
-                leavingIndex,
+                index,
                 1
             );
 
             if (
                 room.players.length === 0
             ) {
-
-                rooms.delete(roomCode);
+                rooms.delete(
+                    room.code
+                );
 
                 return;
             }
 
-            if (
-                leavingIndex <
-                room.presidentIndex
-            ) {
-
-                room.presidentIndex--;
-            }
-
-            if (
-                room.presidentIndex >=
-                room.players.length
-            ) {
-
-                room.presidentIndex = 0;
-            }
-
             /*
-                اگر سازنده خارج شد،
-                بازیکن اول سازنده می‌شود.
+              اگر بازی در جریان بود و بازیکن
+              خارج شد، فعلاً بازی ادامه پیدا می‌کند
+              ولی وضعیت بازیکنان به‌روز می‌شود.
             */
-            if (
-                !room.players.some(
-                    (p) => p.host
-                )
-            ) {
 
-                room.players[0].host =
-                    true;
+            if (room.game) {
+                if (
+                    room.game.president?.id ===
+                    socket.id
+                ) {
+                    room.game.president =
+                        room.players[
+                            room.game
+                                .presidentIndex %
+                            room.players.length
+                        ];
+                }
+
+                broadcastGameState(room);
+
+                return;
             }
 
-            if (room.started) {
-
-                room.nominatedChancellorId =
-                    null;
-
-                room.votes = {};
-
-                room.presidentHand = [];
-
-                room.ministerHand = [];
-
-                room.phase =
-                    "nomination";
-
-                room.lastResult = null;
-
-                addMessage(
-                    room,
-                    "system",
-                    "دربار",
-                    `${leavingPlayer?.name || "یک بازیکن"} از بازی خارج شد.`
-                );
-
-                sendGameState(
-                    roomCode
-                );
-
-            } else {
-
-                addMessage(
-                    room,
-                    "system",
-                    "دربار",
-                    `${leavingPlayer?.name || "بازیکن"} از اتاق خارج شد.`
-                );
-
-                sendRoomState(
-                    roomCode
-                );
-            }
+            broadcastRoomState(room);
         }
     );
-
-    /*
-        وضعیت لابی
-    */
-    function sendRoomState(roomCode) {
-
-        const room =
-            rooms.get(roomCode);
-
-        if (!room) {
-            return;
-        }
-
-        io.to(roomCode).emit(
-            "roomState",
-            {
-                roomCode,
-
-                players:
-                    getPublicPlayers(room),
-
-                started:
-                    room.started,
-
-                messages:
-                    room.messages
-            }
-        );
-    }
 });
 
-const PORT =
-    process.env.PORT || 3000;
+/* =========================================================
+   HTTP
+   ========================================================= */
+
+app.get("/health", (req, res) => {
+    res.json({
+        ok: true,
+        rooms: rooms.size
+    });
+});
+
+app.get("*", (req, res) => {
+    res.sendFile(
+        path.join(
+            __dirname,
+            "public",
+            "index.html"
+        )
+    );
+});
+
+/* =========================================================
+   START
+   ========================================================= */
 
 server.listen(
     PORT,
-    "0.0.0.0",
     () => {
-
         console.log(
-            "================================="
-        );
-
-        console.log(
-            "🌑 سایه‌های دربار"
-        );
-
-        console.log(
-            "👥 حداقل بازیکن: 4"
-        );
-
-        console.log(
-            "🎴 قانون کارت: 3 → 2 → 1"
-        );
-
-        console.log(
-            `Server running on port ${PORT}`
-        );
-
-        console.log(
-            "================================="
+            `سایه‌های دربار running on port ${PORT}`
         );
     }
 );
