@@ -1,3 +1,11 @@
+"use strict";
+
+/* =========================================================
+   سایه‌های دربار - game.js
+   هماهنگ با index.html
+   قانون کارت: 3 → 2 → 1
+========================================================= */
+
 const socket = io({
     reconnection: true,
     reconnectionAttempts: Infinity,
@@ -5,277 +13,323 @@ const socket = io({
     reconnectionDelayMax: 5000
 });
 
-const $ = (id) =>
-    document.getElementById(id);
+/* =========================================================
+   ابزارهای پایه
+========================================================= */
+
+const $ = (id) => document.getElementById(id);
 
 const screens = {
     home: $("homeScreen"),
     tutorial: $("tutorialScreen"),
+    shop: $("shopScreen"),
+    gift: $("giftScreen"),
     lobby: $("lobbyScreen"),
     role: $("roleScreen"),
     game: $("gameScreen"),
     gameOver: $("gameOverScreen")
 };
 
-const playerNameInput =
-    $("playerName");
+const playerNameInput = $("playerName");
+const roomCodeInput = $("roomCodeInput");
+const errorMessage = $("errorMessage");
 
-const roomCodeInput =
-    $("roomCodeInput");
-
-const errorMessage =
-    $("errorMessage");
-
-const playerTokenKey =
-    "saye-darbar-player-token";
-
-const savedRoomKey =
-    "saye-darbar-room";
+const PLAYER_TOKEN_KEY = "saye-darbar-player-token";
+const SAVED_ROOM_KEY = "saye-darbar-room";
 
 let playerToken =
-    localStorage.getItem(
-        playerTokenKey
-    ) || "";
+    localStorage.getItem(PLAYER_TOKEN_KEY) || "";
 
 let savedRoom =
-    localStorage.getItem(
-        savedRoomKey
-    ) || "";
+    localStorage.getItem(SAVED_ROOM_KEY) || "";
 
 let currentState = null;
-
 let pendingState = null;
+let nominationTimerInterval = null;
 
-/*
-    نمایش صفحه
-*/
-function showScreen(screen) {
+/* =========================================================
+   آواتارها
+========================================================= */
 
-    Object.values(screens)
-        .forEach((screenItem) => {
-            if (screenItem) {
-                screenItem.classList.add(
-                    "hidden"
-                );
-            }
-        });
-
-    if (screen) {
-        screen.classList.remove(
-            "hidden"
-        );
+const avatarCatalog = [
+    {
+        id: "default",
+        icon: "🧑🏻‍⚖️",
+        name: "درباری",
+        price: 0
+    },
+    {
+        id: "shah",
+        icon: "👑",
+        name: "شاه قاجار",
+        price: 300
+    },
+    {
+        id: "vizier",
+        icon: "🧿",
+        name: "وزیر اعظم",
+        price: 200
+    },
+    {
+        id: "court",
+        icon: "🎩",
+        name: "اشراف‌زاده",
+        price: 150
+    },
+    {
+        id: "warrior",
+        icon: "⚔️",
+        name: "محافظ سلطنت",
+        price: 250
+    },
+    {
+        id: "ink",
+        icon: "🖋️",
+        name: "منشی دربار",
+        price: 100
     }
+];
+
+/* =========================================================
+   نمایش صفحه
+========================================================= */
+
+function showScreen(screen) {
+    if (!screen) return;
+
+    Object.values(screens).forEach((s) => {
+        if (s) {
+            s.classList.add("hidden");
+        }
+    });
+
+    screen.classList.remove("hidden");
 }
 
-/*
-    صدای کلیک
-*/
+/* =========================================================
+   صدا
+========================================================= */
+
 function playClickSound() {
-
     try {
-
         const AudioContext =
             window.AudioContext ||
             window.webkitAudioContext;
 
-        if (!AudioContext) {
-            return;
-        }
+        if (!AudioContext) return;
 
-        const ctx =
-            new AudioContext();
+        const context = new AudioContext();
 
         const oscillator =
-            ctx.createOscillator();
+            context.createOscillator();
 
         const gain =
-            ctx.createGain();
+            context.createGain();
 
-        oscillator.frequency.value =
-            520;
-
-        oscillator.type =
-            "sine";
+        oscillator.type = "sine";
+        oscillator.frequency.value = 520;
 
         gain.gain.setValueAtTime(
-            0.03,
-            ctx.currentTime
+            0.025,
+            context.currentTime
         );
 
         gain.gain.exponentialRampToValueAtTime(
             0.001,
-            ctx.currentTime + 0.08
+            context.currentTime + 0.08
         );
 
         oscillator.connect(gain);
-
-        gain.connect(
-            ctx.destination
-        );
+        gain.connect(context.destination);
 
         oscillator.start();
 
         oscillator.stop(
-            ctx.currentTime + 0.08
+            context.currentTime + 0.08
         );
-
     } catch (_) {}
 }
 
-/*
-    خطا
-*/
-function showError(text) {
+/* =========================================================
+   راوی
+========================================================= */
 
-    if (errorMessage) {
-        errorMessage.textContent =
-            text || "";
-    }
-}
-
-/*
-    ذخیره اتاق
-*/
-function saveSession(code) {
-
-    if (!code) {
+function speak(text) {
+    if (!("speechSynthesis" in window)) {
         return;
     }
 
-    savedRoom = code;
+    if (!text) return;
 
-    localStorage.setItem(
-        savedRoomKey,
-        code
+    window.speechSynthesis.cancel();
+
+    const utterance =
+        new SpeechSynthesisUtterance(text);
+
+    utterance.lang = "fa-IR";
+    utterance.rate = 0.88;
+    utterance.pitch = 0.72;
+    utterance.volume = 1;
+
+    const voices =
+        window.speechSynthesis.getVoices();
+
+    const preferred =
+        voices.find(
+            (voice) =>
+                /fa|persian/i.test(
+                    voice.lang || voice.name || ""
+                ) &&
+                /male|man|مرد/i.test(
+                    voice.name || ""
+                )
+        ) ||
+        voices.find(
+            (voice) =>
+                /fa/i.test(
+                    voice.lang || ""
+                )
+        );
+
+    if (preferred) {
+        utterance.voice = preferred;
+    }
+
+    window.speechSynthesis.speak(
+        utterance
     );
 }
 
-/*
-    بازیکنان
-*/
+/* =========================================================
+   خطاها
+========================================================= */
+
+function showError(message) {
+    if (!errorMessage) return;
+
+    errorMessage.textContent =
+        message || "";
+}
+
+/* =========================================================
+   ذخیره اتاق
+========================================================= */
+
+function saveSession(roomCode) {
+    if (!roomCode) return;
+
+    savedRoom = roomCode;
+
+    localStorage.setItem(
+        SAVED_ROOM_KEY,
+        roomCode
+    );
+}
+
+/* =========================================================
+   هویت بازیکن
+========================================================= */
+
+function emitIdentity() {
+    return {
+        playerToken
+    };
+}
+
+/* =========================================================
+   بازیکنان
+========================================================= */
+
+function getAvatarIcon(avatarId) {
+    const avatar =
+        avatarCatalog.find(
+            (a) => a.id === avatarId
+        );
+
+    return avatar?.icon || "👤";
+}
+
 function renderPlayers(
     players,
     container = $("playersList")
 ) {
-
-    if (!container) {
-        return;
-    }
+    if (!container) return;
 
     container.innerHTML = "";
 
-    (players || []).forEach(
-        (player) => {
+    (players || []).forEach((player) => {
+        const item =
+            document.createElement("div");
 
-            const item =
-                document.createElement(
-                    "div"
-                );
+        item.className = "player";
 
-            item.className =
-                "player";
-
-            if (
-                player.connected === false
-            ) {
-                item.classList.add(
-                    "offline"
-                );
-            }
-
-            const name =
-                document.createElement(
-                    "span"
-                );
-
-            name.className =
-                "playerName";
-
-            name.textContent =
-                `👤 ${player.name}`;
-
-            item.appendChild(name);
-
-            if (player.host) {
-
-                const host =
-                    document.createElement(
-                        "span"
-                    );
-
-                host.className =
-                    "host";
-
-                host.textContent =
-                    "👑 سازنده";
-
-                item.appendChild(host);
-            }
-
-            if (
-                player.connected === false
-            ) {
-
-                const offline =
-                    document.createElement(
-                        "span"
-                    );
-
-                offline.className =
-                    "smallText";
-
-                offline.textContent =
-                    "اتصال قطع";
-
-                item.appendChild(
-                    offline
-                );
-            }
-
-            container.appendChild(
-                item
-            );
+        if (player.connected === false) {
+            item.classList.add("offline");
         }
-    );
+
+        const name =
+            document.createElement("span");
+
+        name.className = "playerName";
+
+        name.textContent =
+            `${getAvatarIcon(player.avatar)} ${player.name}`;
+
+        item.appendChild(name);
+
+        if (player.host) {
+            const host =
+                document.createElement("span");
+
+            host.className = "host";
+
+            host.textContent =
+                "👑 سازنده";
+
+            item.appendChild(host);
+        }
+
+        if (player.connected === false) {
+            const offline =
+                document.createElement("span");
+
+            offline.className =
+                "smallText";
+
+            offline.textContent =
+                "اتصال قطع";
+
+            item.appendChild(offline);
+        }
+
+        container.appendChild(item);
+    });
 }
 
-/*
-    چت
-*/
+/* =========================================================
+   چت
+========================================================= */
+
 function renderChatMessage(
     message,
     box = $("chatMessages")
 ) {
-
-    if (!box) {
-        return;
-    }
+    if (!box || !message) return;
 
     const item =
-        document.createElement(
-            "div"
-        );
+        document.createElement("div");
 
     item.className =
         "chatMessage";
 
-    if (
-        message.type === "system"
-    ) {
-
-        item.classList.add(
-            "system"
-        );
+    if (message.type === "system") {
+        item.classList.add("system");
 
         item.textContent =
             `• ${message.text}`;
-
     } else {
-
         const name =
-            document.createElement(
-                "span"
-            );
+            document.createElement("span");
 
         name.className =
             "chatName";
@@ -284,15 +338,12 @@ function renderChatMessage(
             `${message.name}:`;
 
         const text =
-            document.createElement(
-                "span"
-            );
+            document.createElement("span");
 
         text.textContent =
             ` ${message.text}`;
 
         item.appendChild(name);
-
         item.appendChild(text);
     }
 
@@ -306,10 +357,7 @@ function renderChat(
     messages,
     box = $("chatMessages")
 ) {
-
-    if (!box) {
-        return;
-    }
+    if (!box) return;
 
     box.innerHTML = "";
 
@@ -322,242 +370,195 @@ function renderChat(
     );
 }
 
-/*
-    نوار سیاست‌ها
-*/
+/* =========================================================
+   نوار سیاست‌ها
+========================================================= */
+
 function renderTrack(
     container,
     count,
     total,
     color
 ) {
-
-    if (!container) {
-        return;
-    }
+    if (!container) return;
 
     container.innerHTML = "";
+
+    const safeCount =
+        Math.max(
+            0,
+            Math.min(
+                Number(count) || 0,
+                total
+            )
+        );
 
     for (
         let i = 0;
         i < total;
         i++
     ) {
-
         const slot =
-            document.createElement(
-                "div"
-            );
+            document.createElement("div");
 
         slot.className =
             "trackSlot";
 
-        if (i < count) {
-
+        if (i < safeCount) {
             slot.classList.add(
                 "active",
                 color
             );
         }
 
-        container.appendChild(
-            slot
-        );
+        container.appendChild(slot);
     }
 }
 
-/*
-    نقش
-*/
+/* =========================================================
+   نقش
+========================================================= */
+
 function renderRole(
     role,
     allies
 ) {
-
     const card =
         $("roleCard");
 
-    const box =
+    const alliesBox =
         $("alliesBox");
 
-    if (!card || !box) {
+    if (!card || !alliesBox) {
         return;
     }
 
     card.className =
         "roleCard";
 
-    box.innerHTML = "";
+    card.innerHTML = "";
 
-    if (
-        role ===
-        "constitutionalist"
-    ) {
+    const roleNames = {
+        constitutionalist:
+            "🟦 مشروطه‌خواه",
 
-        card.classList.add(
-            "constitutionalist"
-        );
+        qajar:
+            "🟥 قاجاری",
 
-        card.textContent =
-            "🟦 مشروطه‌خواه";
+        naser:
+            "👑 ناصرالدین شاه"
+    };
 
-        box.textContent =
+    card.classList.add(
+        role || "unknown"
+    );
+
+    card.textContent =
+        roleNames[role] ||
+        "نقش ناشناس";
+
+    alliesBox.innerHTML = "";
+
+    if (role === "constitutionalist") {
+        alliesBox.textContent =
             "شما در جبهه مشروطه‌خواهان هستید.";
-
-    } else if (
-        role === "qajar"
-    ) {
-
-        card.classList.add(
-            "qajar"
-        );
-
-        card.textContent =
-            "🟥 قاجاری";
-
-        box.innerHTML =
-            "<strong>هم‌پیمانان شما:</strong>";
-
-        renderAllies(
-            allies
-        );
-
-    } else if (
-        role === "naser"
-    ) {
-
-        card.classList.add(
-            "naser"
-        );
-
-        card.textContent =
-            "👑 ناصرالدین شاه";
-
-        box.innerHTML =
-            "<strong>هم‌پیمانان قاجاری شما:</strong>";
-
-        renderAllies(
-            allies
-        );
-    }
-}
-
-function renderAllies(
-    allies
-) {
-
-    const box =
-        $("alliesBox");
-
-    if (!box) {
         return;
     }
 
-    if (
-        !allies ||
-        !allies.length
-    ) {
+    const title =
+        document.createElement("strong");
 
-        const div =
-            document.createElement(
-                "div"
-            );
+    title.textContent =
+        "هم‌پیمانان شما:";
 
-        div.className =
+    alliesBox.appendChild(title);
+
+    const list =
+        Array.isArray(allies)
+            ? allies
+            : [];
+
+    if (list.length === 0) {
+        const item =
+            document.createElement("div");
+
+        item.className =
             "ally";
 
-        div.textContent =
+        item.textContent =
             "هم‌پیمان دیگری شناسایی نشد.";
 
-        box.appendChild(div);
+        alliesBox.appendChild(item);
 
         return;
     }
 
-    allies.forEach(
-        (ally) => {
+    list.forEach((ally) => {
+        const item =
+            document.createElement("div");
 
-            const div =
-                document.createElement(
-                    "div"
-                );
+        item.className =
+            "ally";
 
-            div.className =
-                "ally";
+        item.textContent =
+            `👤 ${ally.name} — ${ally.role}`;
 
-            div.textContent =
-                `👤 ${ally.name} — ${ally.role}`;
-
-            box.appendChild(
-                div
-            );
-        }
-    );
+        alliesBox.appendChild(item);
+    });
 }
 
-/*
-    مخفی کردن اکشن‌ها
-*/
+/* =========================================================
+   مخفی کردن اکشن‌ها
+========================================================= */
+
 function setActionBoxesHidden() {
+    const ids = [
+        "nominationBox",
+        "voteBox",
+        "presidentPolicyBox",
+        "ministerPolicyBox"
+    ];
 
-    $("nominationBox")
-        ?.classList.add("hidden");
+    ids.forEach((id) => {
+        const element = $(id);
 
-    $("voteBox")
-        ?.classList.add("hidden");
-
-    $("presidentPolicyBox")
-        ?.classList.add("hidden");
-
-    $("ministerPolicyBox")
-        ?.classList.add("hidden");
+        if (element) {
+            element.classList.add("hidden");
+        }
+    });
 
     if ($("publicResult")) {
-        $("publicResult")
-            .textContent = "";
+        $("publicResult").textContent = "";
     }
 
     if ($("gameMessage")) {
-        $("gameMessage")
-            .textContent = "";
-    }
-
-    if ($("discardHint")) {
-        $("discardHint")
-            .textContent = "";
+        $("gameMessage").textContent = "";
     }
 }
 
-/*
-    لیست وزیرها
-*/
-function renderNominees(
-    players
-) {
+/* =========================================================
+   انتخاب وزیر
+========================================================= */
 
+function renderNominees(players) {
     const select =
         $("nomineeSelect");
 
-    if (!select) {
-        return;
-    }
+    if (!select) return;
 
     select.innerHTML = "";
 
-    (players || []).forEach(
-        (player) => {
+    const currentPresident =
+        currentState?.president?.id;
 
-            if (
-                player.id ===
-                socket.id
-            ) {
-                return;
-            }
-
+    (players || [])
+        .filter(
+            (player) =>
+                player.id !== currentPresident
+        )
+        .forEach((player) => {
             const option =
-                document.createElement(
-                    "option"
-                );
+                document.createElement("option");
 
             option.value =
                 player.id;
@@ -565,139 +566,106 @@ function renderNominees(
             option.textContent =
                 player.name;
 
-            select.appendChild(
-                option
-            );
-        }
-    );
+            select.appendChild(option);
+        });
 }
 
-/*
-    اطلاعات کارت
-*/
-function getCardInfo(
-    card
-) {
+/* =========================================================
+   کارت سیاست
+========================================================= */
 
-    if (
-        card ===
-        "constitutional"
-    ) {
-
+function cardLabel(card) {
+    if (card === "constitutional") {
         return {
             icon: "🏛️",
-            title:
-                "سیاست مشروطه",
+            title: "سیاست مشروطه",
             className: "blue"
         };
     }
 
     return {
         icon: "👑",
-        title:
-            "سیاست قاجاری",
+        title: "سیاست قاجاری",
         className: "red"
     };
 }
 
-/*
-    ساخت کارت
-*/
-function createPolicyCard(
+function makeCard(
     card,
     index,
-    onClick
+    handler
 ) {
-
     const info =
-        getCardInfo(card);
+        cardLabel(card);
 
     const button =
-        document.createElement(
-            "button"
-        );
+        document.createElement("button");
 
-    button.type =
-        "button";
+    button.type = "button";
 
     button.className =
         `policyCard ${info.className}`;
 
     button.innerHTML = `
-        <span class="policyCardIcon">
-            ${info.icon}
-        </span>
-        <strong>
+        <span>
+            <span class="seal">
+                ${info.icon}
+            </span>
             ${info.title}
-        </strong>
+        </span>
     `;
 
     button.addEventListener(
         "click",
         () => {
-
             playClickSound();
-
-            onClick(index);
+            handler(index);
         }
     );
 
     return button;
 }
 
-/*
-    ==================================================
-    کارت‌های صدر
-    ==================================================
+/* =========================================================
+   کارت‌های صدر
+   ۳ کارت → انتخاب یک کارت برای حذف
+========================================================= */
 
-    اینجا دقیقاً 3 کارت نمایش داده می‌شود.
-*/
-function renderPresidentCards(
-    cards
-) {
-
+function renderPresidentCards(cards) {
     const box =
         $("presidentCards");
 
-    if (!box) {
-        console.error(
-            "presidentCards پیدا نشد."
-        );
-
-        return;
-    }
+    if (!box) return;
 
     box.innerHTML = "";
 
-    if (
-        !Array.isArray(cards) ||
-        cards.length !== 3
-    ) {
+    const safeCards =
+        Array.isArray(cards)
+            ? cards
+            : [];
 
-        console.error(
-            "تعداد کارت‌های صدر باید 3 باشد:",
-            cards
-        );
+    if (safeCards.length !== 3) {
+        const error =
+            document.createElement("div");
 
-        if ($("discardHint")) {
+        error.className =
+            "message";
 
-            $("discardHint")
-                .textContent =
-                "خطا: سه کارت سیاست دریافت نشد.";
-        }
+        error.textContent =
+            "خطا: صدر باید ۳ کارت دریافت کند.";
+
+        box.appendChild(error);
 
         return;
     }
 
-    cards.forEach(
+    safeCards.forEach(
         (card, index) => {
-
-            const element =
-                createPolicyCard(
+            box.appendChild(
+                makeCard(
                     card,
                     index,
                     (selectedIndex) => {
-
                         socket.emit(
                             "presidentDiscard",
                             {
@@ -706,169 +674,215 @@ function renderPresidentCards(
                             }
                         );
 
-                        /*
-                            بعد از انتخاب،
-                            همه کارت‌ها غیرفعال می‌شوند.
-                        */
                         Array.from(
                             box.children
                         ).forEach(
-                            (child) => {
-                                child.disabled =
+                            (element) => {
+                                element.disabled =
                                     true;
                             }
                         );
 
-                        if (
-                            $("discardHint")
-                        ) {
-
-                            $("discardHint")
-                                .textContent =
-                                "کارت کنار گذاشته شد؛ دو کارت باقی‌مانده به وزیر رفت.";
+                        if ($("discardHint")) {
+                            $("discardHint").textContent =
+                                "کارت انتخاب شد؛ دو کارت باقی‌مانده به وزیر می‌رود...";
                         }
                     }
-                );
-
-            box.appendChild(
-                element
+                )
             );
         }
     );
 }
 
-/*
-    ==================================================
-    کارت‌های وزیر
-    ==================================================
+/* =========================================================
+   کارت‌های وزیر
+   ۲ کارت → انتخاب یک کارت
+========================================================= */
 
-    وزیر دو کارت می‌بیند.
-    یکی را انتخاب می‌کند.
-    سپس دکمه تصویب را می‌زند.
-*/
-let selectedMinisterIndex =
-    null;
+function renderMinisterCards(cards) {
+    const box =
+        $("ministerCards");
 
-function renderMinisterCards(
-    cards
-) {
+    if (!box) return;
 
-    const container =
-        $("ministerCard");
+    box.innerHTML = "";
 
-    if (!container) {
-        console.error(
-            "ministerCard پیدا نشد."
-        );
+    const safeCards =
+        Array.isArray(cards)
+            ? cards
+            : [];
 
-        return;
-    }
+    if (safeCards.length !== 2) {
+        const error =
+            document.createElement("div");
 
-    container.innerHTML = "";
+        error.className =
+            "message";
 
-    selectedMinisterIndex =
-        null;
+        error.textContent =
+            "خطا: وزیر باید ۲ کارت دریافت کند.";
 
-    if (
-        !Array.isArray(cards) ||
-        cards.length !== 2
-    ) {
-
-        container.textContent =
-            "خطا: دو کارت وزیر دریافت نشد.";
+        box.appendChild(error);
 
         return;
     }
 
-    cards.forEach(
+    safeCards.forEach(
         (card, index) => {
-
-            const element =
-                createPolicyCard(
+            box.appendChild(
+                makeCard(
                     card,
                     index,
                     (selectedIndex) => {
-
-                        selectedMinisterIndex =
-                            selectedIndex;
-
                         Array.from(
-                            container.children
+                            box.children
                         ).forEach(
-                            (child, childIndex) => {
-
-                                child.classList.toggle(
-                                    "selected",
-                                    childIndex ===
-                                        selectedIndex
-                                );
+                            (element) => {
+                                element.disabled =
+                                    true;
                             }
                         );
 
-                        const enactButton =
-                            $("enactButton");
-
-                        if (enactButton) {
-                            enactButton.disabled =
-                                false;
-                        }
-
-                        if ($("gameMessage")) {
-
-                            $("gameMessage")
-                                .textContent =
-                                "کارت انتخاب شد؛ حالا روی «تصویب این سیاست» بزن.";
-                        }
+                        socket.emit(
+                            "ministerEnact",
+                            {
+                                index:
+                                    selectedIndex
+                            }
+                        );
                     }
-                );
-
-            container.appendChild(
-                element
+                )
             );
         }
     );
-
-    const enactButton =
-        $("enactButton");
-
-    if (enactButton) {
-        enactButton.disabled =
-            true;
-    }
 }
 
-/*
-    تایمر/وضعیت بازی
-*/
-function renderGameState(
-    state
-) {
+/* =========================================================
+   تایمر صدر
+========================================================= */
 
-    if (!state) {
+function updateNominationTimer(
+    endAt
+) {
+    clearInterval(
+        nominationTimerInterval
+    );
+
+    const timer =
+        $("nominationTimer");
+
+    if (!timer) return;
+
+    if (!endAt) {
+        timer.textContent =
+            "⏱️ --";
+
         return;
     }
 
-    currentState =
-        state;
+    const tick = () => {
+        const left =
+            Math.max(
+                0,
+                Math.ceil(
+                    (endAt -
+                        Date.now()) /
+                        1000
+                )
+            );
 
-    pendingState =
-        state;
+        timer.textContent =
+            `⏱️ ${left}`;
+
+        if (left <= 0) {
+            clearInterval(
+                nominationTimerInterval
+            );
+        }
+    };
+
+    tick();
+
+    nominationTimerInterval =
+        setInterval(
+            tick,
+            250
+        );
+}
+
+/* =========================================================
+   پایان بازی
+========================================================= */
+
+function showGameOver(winner) {
+    if (!winner) return;
+
+    const icon =
+        $("gameOverIcon");
+
+    const title =
+        $("gameOverTitle");
+
+    const reason =
+        $("gameOverReason");
+
+    if (icon) {
+        icon.textContent =
+            winner.faction === "qajar"
+                ? "👑"
+                : "🏛️";
+    }
+
+    if (title) {
+        title.textContent =
+            winner.faction === "qajar"
+                ? "قاجاریان پیروز شدند"
+                : "مشروطه‌خواهان پیروز شدند";
+    }
+
+    if (reason) {
+        reason.textContent =
+            winner.reason || "";
+    }
+
+    showScreen(
+        screens.gameOver
+    );
+}
+
+/* =========================================================
+   نمایش وضعیت بازی
+========================================================= */
+
+function renderGameState(state) {
+    if (!state) return;
+
+    currentState = state;
+    pendingState = state;
 
     showScreen(
         screens.game
     );
 
-    $("phaseTitle").textContent =
-        state.phaseText || "---";
+    if ($("phaseTitle")) {
+        $("phaseTitle").textContent =
+            state.phaseText || "---";
+    }
 
-    $("policyDeckCount").textContent =
-        `کارت‌های باقی‌مانده: ${state.policyDeckCount ?? "--"}`;
+    if ($("policyDeckCount")) {
+        $("policyDeckCount").textContent =
+            `کارت‌های باقی‌مانده: ${state.policyDeckCount ?? "--"}`;
+    }
 
-    $("constitutionalCount").textContent =
-        `${state.constitutionalPolicies} / 5`;
+    if ($("constitutionalCount")) {
+        $("constitutionalCount").textContent =
+            `${state.constitutionalPolicies || 0} / 5`;
+    }
 
-    $("qajarCount").textContent =
-        `${state.qajarPolicies} / 6`;
+    if ($("qajarCount")) {
+        $("qajarCount").textContent =
+            `${state.qajarPolicies || 0} / 6`;
+    }
 
     renderTrack(
         $("constitutionalTrack"),
@@ -889,525 +903,795 @@ function renderGameState(
         $("gamePlayers")
     );
 
-    const presidentName =
-        state.president?.name ||
-        "نامشخص";
+    if ($("presidentBox")) {
+        $("presidentBox").innerHTML = `
+            <strong>👑 صدر فعلی</strong>
+            <br>
+            ${state.president?.name || "نامشخص"}
+        `;
+    }
 
-    const nomineeName =
-        state.nominee?.name ||
-        "هنوز انتخاب نشده";
-
-    $("presidentBox").innerHTML = `
-        <strong>👑 صدر فعلی</strong>
-        <br>
-        ${presidentName}
-    `;
-
-    $("nomineeBox").innerHTML = `
-        <strong>📜 وزیر معرفی‌شده</strong>
-        <br>
-        ${nomineeName}
-    `;
+    if ($("nomineeBox")) {
+        $("nomineeBox").innerHTML = `
+            <strong>📜 وزیر معرفی‌شده</strong>
+            <br>
+            ${state.nominee?.name || "هنوز انتخاب نشده"}
+        `;
+    }
 
     setActionBoxesHidden();
 
-    /*
-        نتیجه رأی قبلی
-    */
-    if (state.lastResult) {
+    updateNominationTimer(
+        state.phase === "nomination"
+            ? state.nominationEndsAt
+            : null
+    );
 
+    /* نتیجه رأی‌گیری */
+
+    if (
+        state.lastResult &&
+        $("publicResult")
+    ) {
         $("publicResult").textContent =
             state.lastResult.approved
                 ? `✅ دولت تأیید شد — ${state.lastResult.yesVotes} موافق / ${state.lastResult.noVotes} مخالف`
                 : `❌ دولت رد شد — ${state.lastResult.yesVotes} موافق / ${state.lastResult.noVotes} مخالف`;
     }
 
-    /*
-        انتخاب وزیر
-    */
-    if (
-        state.phase ===
-        "nomination"
-    ) {
+    /* مرحله معرفی وزیر */
+
+    if (state.phase === "nomination") {
+        const nominationBox =
+            $("nominationBox");
 
         if (
-            state.youArePresident
+            state.youArePresident &&
+            nominationBox
         ) {
-
-            $("nominationBox")
-                .classList.remove(
-                    "hidden"
-                );
+            nominationBox.classList.remove(
+                "hidden"
+            );
 
             renderNominees(
                 state.players
             );
-
-        } else {
-
-            $("gameMessage")
-                .textContent =
-                `⏳ منتظر انتخاب وزیر توسط ${presidentName} هستیم...`;
+        } else if ($("gameMessage")) {
+            $("gameMessage").textContent =
+                `⏳ منتظر انتخاب وزیر توسط ${
+                    state.president?.name ||
+                    "صدر"
+                } هستیم...`;
         }
     }
 
-    /*
-        رأی‌گیری
-    */
-    if (
-        state.phase ===
-        "vote"
-    ) {
+    /* مرحله رأی‌گیری */
 
-        $("voteBox")
-            .classList.remove(
+    if (state.phase === "vote") {
+        const voteBox =
+            $("voteBox");
+
+        if (voteBox) {
+            voteBox.classList.remove(
                 "hidden"
             );
+        }
 
-        $("voteDescription")
-            .textContent =
-            `آیا با ریاست ${presidentName} و وزارت ${nomineeName} موافق هستید؟`;
+        if ($("voteDescription")) {
+            $("voteDescription").textContent =
+                `آیا با ریاست ${
+                    state.president?.name ||
+                    "صدر"
+                } و وزارت ${
+                    state.nominee?.name ||
+                    "وزیر"
+                } موافق هستید؟`;
+        }
 
         const voted =
             Boolean(
                 state.youVoted
             );
 
-        $("yesVoteButton")
-            .disabled =
-            voted;
+        if ($("yesVoteButton")) {
+            $("yesVoteButton").disabled =
+                voted;
+        }
 
-        $("noVoteButton")
-            .disabled =
-            voted;
+        if ($("noVoteButton")) {
+            $("noVoteButton").disabled =
+                voted;
+        }
 
-        $("voteStatus")
-            .textContent =
-            voted
-                ? "✅ رأی شما ثبت شده؛ منتظر بقیه باشید."
-                : "رأی خود را انتخاب کنید.";
+        if ($("voteStatus")) {
+            $("voteStatus").textContent =
+                voted
+                    ? "✅ رأی شما ثبت شده؛ منتظر بقیه باشید."
+                    : "رأی خود را انتخاب کنید.";
+        }
     }
 
-    /*
-        مرحله صدر
-    */
+    /* مرحله صدر */
+
     if (
         state.phase ===
         "president_discard"
     ) {
-
-        if (
-            state.youArePresident
-        ) {
-
-            $("presidentPolicyBox")
-                .classList.remove(
-                    "hidden"
-                );
-
-            $("discardHint")
-                .textContent =
-                "۳ کارت داری؛ یکی را کنار بگذار.";
-        } else {
-
-            $("gameMessage")
-                .textContent =
-                `⏳ صدر در حال انتخاب یک کارت از سه کارت است...`;
+        if (state.youArePresident) {
+            if ($("gameMessage")) {
+                $("gameMessage").textContent =
+                    "⏳ سه کارت محرمانه برای شما ارسال شده است.";
+            }
+        } else if ($("gameMessage")) {
+            $("gameMessage").textContent =
+                "⏳ صدر در حال انتخاب یک کارت از سه کارت است...";
         }
     }
 
-    /*
-        مرحله وزیر
-    */
+    /* مرحله وزیر */
+
     if (
         state.phase ===
         "minister_enact"
     ) {
-
-        if (
-            state.youAreNominee
-        ) {
-
-            $("ministerPolicyBox")
-                .classList.remove(
-                    "hidden"
-                );
-
-            $("gameMessage")
-                .textContent =
-                "دو کارت به شما رسیده؛ یکی را انتخاب و تصویب کنید.";
-
-        } else {
-
-            $("gameMessage")
-                .textContent =
-                `⏳ وزیر در حال انتخاب یکی از دو کارت است...`;
+        if (state.youAreNominee) {
+            if ($("gameMessage")) {
+                $("gameMessage").textContent =
+                    "⏳ دو کارت به شما رسیده؛ یکی را برای تصویب انتخاب کنید.";
+            }
+        } else if ($("gameMessage")) {
+            $("gameMessage").textContent =
+                "⏳ وزیر در حال انتخاب یکی از دو کارت است...";
         }
     }
 
-    /*
-        پایان بازی
-    */
+    /* پایان */
+
     if (
-        state.phase ===
-        "finished" &&
+        state.phase === "finished" &&
         state.winner
     ) {
-
         showGameOver(
             state.winner
         );
     }
 }
 
-/*
-    پایان بازی
-*/
-function showGameOver(
-    winner
-) {
+/* =========================================================
+   پروفایل / سکه / آواتار
+========================================================= */
 
-    if (!winner) {
-        return;
+function renderProfile(profile) {
+    if (!profile) return;
+
+    if ($("coinCount")) {
+        $("coinCount").textContent =
+            profile.coins ?? 0;
     }
 
-    const isQajar =
-        winner.faction ===
-        "qajar";
+    if ($("shopCoins")) {
+        $("shopCoins").textContent =
+            profile.coins ?? 0;
+    }
 
-    $("gameOverIcon").textContent =
-        isQajar
-            ? "👑"
-            : "🏛️";
+    renderShop(profile);
+}
 
-    $("gameOverTitle")
-        .textContent =
-        isQajar
-            ? "قاجاریان پیروز شدند"
-            : "مشروطه‌خواهان پیروز شدند";
+function renderShop(profile) {
+    const grid =
+        $("avatarGrid");
 
-    $("gameOverReason")
-        .textContent =
-        winner.reason || "";
+    if (!grid) return;
 
-    showScreen(
-        screens.gameOver
+    grid.innerHTML = "";
+
+    const ownedAvatars =
+        Array.isArray(profile.avatars)
+            ? profile.avatars
+            : ["default"];
+
+    avatarCatalog.forEach(
+        (avatar) => {
+            const owned =
+                ownedAvatars.includes(
+                    avatar.id
+                );
+
+            const item =
+                document.createElement("div");
+
+            item.className =
+                "avatarItem";
+
+            item.innerHTML = `
+                <div class="avatarIcon">
+                    ${avatar.icon}
+                </div>
+
+                <strong>
+                    ${avatar.name}
+                </strong>
+
+                <div class="avatarPrice">
+                    ${
+                        avatar.price
+                            ? `🪙 ${avatar.price}`
+                            : "رایگان"
+                    }
+                </div>
+            `;
+
+            const button =
+                document.createElement("button");
+
+            button.type =
+                "button";
+
+            if (owned) {
+                button.textContent =
+                    avatar.id === "default"
+                        ? "انتخاب‌شده"
+                        : "انتخاب";
+            } else {
+                button.textContent =
+                    "خرید";
+            }
+
+            button.disabled =
+                owned &&
+                avatar.id === "default";
+
+            button.addEventListener(
+                "click",
+                () => {
+                    if (owned) {
+                        socket.emit(
+                            "selectAvatar",
+                            {
+                                avatar:
+                                    avatar.id
+                            }
+                        );
+                    } else {
+                        socket.emit(
+                            "buyAvatar",
+                            {
+                                avatar:
+                                    avatar.id,
+                                price:
+                                    avatar.price
+                            }
+                        );
+                    }
+                }
+            );
+
+            item.appendChild(
+                button
+            );
+
+            grid.appendChild(
+                item
+            );
+        }
     );
 }
 
-/*
-    ساخت اتاق
-*/
-$("createRoomButton")
-    .addEventListener(
-        "click",
-        () => {
+/* =========================================================
+   چت
+========================================================= */
 
-            playClickSound();
-
-            const name =
-                playerNameInput.value
-                    .trim();
-
-            showError("");
-
-            if (!name) {
-
-                showError(
-                    "اول نامت را وارد کن."
-                );
-
-                return;
-            }
-
-            socket.emit(
-                "createRoom",
-                {
-                    name
-                }
-            );
-        }
-    );
-
-/*
-    ورود به اتاق
-*/
-$("joinRoomButton")
-    .addEventListener(
-        "click",
-        () => {
-
-            playClickSound();
-
-            const name =
-                playerNameInput.value
-                    .trim();
-
-            const code =
-                roomCodeInput.value
-                    .trim();
-
-            showError("");
-
-            if (!name) {
-
-                showError(
-                    "اول نامت را وارد کن."
-                );
-
-                return;
-            }
-
-            if (
-                !/^\d{4}$/.test(code)
-            ) {
-
-                showError(
-                    "کد اتاق باید ۴ رقمی باشد."
-                );
-
-                return;
-            }
-
-            socket.emit(
-                "joinRoom",
-                {
-                    name,
-                    roomCode: code
-                }
-            );
-        }
-    );
-
-/*
-    شروع بازی
-*/
-$("startGameButton")
-    .addEventListener(
-        "click",
-        () => {
-
-            playClickSound();
-
-            socket.emit(
-                "startGame"
-            );
-        }
-    );
-
-/*
-    چت لابی
-*/
 function sendLobbyChat() {
-
     const input =
         $("chatInput");
 
-    if (!input) {
-        return;
-    }
+    if (!input) return;
 
     const text =
         input.value.trim();
 
-    if (!text) {
-        return;
-    }
+    if (!text) return;
 
     socket.emit(
         "lobbyChat",
-        {
-            text
-        }
+        { text }
     );
 
     input.value = "";
 }
 
-$("sendChatButton")
-    .addEventListener(
-        "click",
-        sendLobbyChat
+function sendGameChat() {
+    const input =
+        $("gameChatInput");
+
+    if (!input) return;
+
+    const text =
+        input.value.trim();
+
+    if (!text) return;
+
+    socket.emit(
+        "gameChat",
+        { text }
     );
 
-$("chatInput")
-    .addEventListener(
-        "keydown",
-        (event) => {
+    input.value = "";
+}
 
-            if (
-                event.key ===
-                "Enter"
-            ) {
+/* =========================================================
+   اتصال رویدادهای HTML
+========================================================= */
 
-                sendLobbyChat();
-            }
-        }
-    );
+if ($("createRoomButton")) {
+    $("createRoomButton")
+        .addEventListener(
+            "click",
+            () => {
+                playClickSound();
 
-/*
-    ورود به بازی بعد از نقش
-*/
-$("continueGameButton")
-    .addEventListener(
-        "click",
-        () => {
+                const name =
+                    playerNameInput?.value
+                        .trim();
 
-            playClickSound();
+                showError("");
 
-            if (pendingState) {
+                if (!name) {
+                    showError(
+                        "اول نامت را وارد کن."
+                    );
+                    return;
+                }
 
-                renderGameState(
-                    pendingState
+                socket.emit(
+                    "createRoom",
+                    {
+                        name,
+                        ...emitIdentity()
+                    }
                 );
             }
-        }
-    );
+        );
+}
 
-/*
-    معرفی وزیر
-*/
-$("nominateButton")
-    .addEventListener(
-        "click",
-        () => {
+if ($("joinRoomButton")) {
+    $("joinRoomButton")
+        .addEventListener(
+            "click",
+            () => {
+                playClickSound();
 
-            playClickSound();
+                const name =
+                    playerNameInput?.value
+                        .trim();
 
-            socket.emit(
-                "nominateChancellor",
-                {
-                    playerId:
-                        $("nomineeSelect")
-                            .value
+                const code =
+                    roomCodeInput?.value
+                        .trim();
+
+                showError("");
+
+                if (!name) {
+                    showError(
+                        "اول نامت را وارد کن."
+                    );
+                    return;
                 }
-            );
-        }
-    );
 
-/*
-    رأی مثبت
-*/
-$("yesVoteButton")
-    .addEventListener(
-        "click",
-        () => {
-
-            playClickSound();
-
-            socket.emit(
-                "castVote",
-                {
-                    vote: "yes"
+                if (!/^\d{4}$/.test(code)) {
+                    showError(
+                        "کد اتاق باید ۴ رقمی باشد."
+                    );
+                    return;
                 }
-            );
-        }
-    );
 
-/*
-    رأی منفی
-*/
-$("noVoteButton")
-    .addEventListener(
-        "click",
-        () => {
-
-            playClickSound();
-
-            socket.emit(
-                "castVote",
-                {
-                    vote: "no"
-                }
-            );
-        }
-    );
-
-/*
-    تصویب کارت وزیر
-*/
-$("enactButton")
-    .addEventListener(
-        "click",
-        () => {
-
-            playClickSound();
-
-            if (
-                selectedMinisterIndex ===
-                null
-            ) {
-
-                return;
+                socket.emit(
+                    "joinRoom",
+                    {
+                        name,
+                        roomCode: code,
+                        ...emitIdentity()
+                    }
+                );
             }
+        );
+}
 
-            $("enactButton")
-                .disabled = true;
+if ($("startGameButton")) {
+    $("startGameButton")
+        .addEventListener(
+            "click",
+            () => {
+                playClickSound();
+                socket.emit(
+                    "startGame"
+                );
+            }
+        );
+}
 
-            socket.emit(
-                "ministerEnact",
-                {
-                    index:
-                        selectedMinisterIndex
+if ($("sendChatButton")) {
+    $("sendChatButton")
+        .addEventListener(
+            "click",
+            sendLobbyChat
+        );
+}
+
+if ($("chatInput")) {
+    $("chatInput")
+        .addEventListener(
+            "keydown",
+            (event) => {
+                if (event.key === "Enter") {
+                    sendLobbyChat();
                 }
-            );
-        }
-    );
+            }
+        );
+}
 
-/*
-    شروع دوباره
-*/
-$("reloadButton")
-    .addEventListener(
-        "click",
-        () => {
+if ($("gameChatSendButton")) {
+    $("gameChatSendButton")
+        .addEventListener(
+            "click",
+            sendGameChat
+        );
+}
 
-            window.location.reload();
-        }
-    );
+if ($("gameChatInput")) {
+    $("gameChatInput")
+        .addEventListener(
+            "keydown",
+            (event) => {
+                if (event.key === "Enter") {
+                    sendGameChat();
+                }
+            }
+        );
+}
 
-/*
-    ساخت اتاق
-*/
+/* =========================================================
+   ورود از نقش به بازی
+========================================================= */
+
+if ($("continueGameButton")) {
+    $("continueGameButton")
+        .addEventListener(
+            "click",
+            () => {
+                playClickSound();
+
+                if (pendingState) {
+                    renderGameState(
+                        pendingState
+                    );
+                } else {
+                    showScreen(
+                        screens.game
+                    );
+                }
+            }
+        );
+}
+
+/* =========================================================
+   معرفی وزیر
+========================================================= */
+
+if ($("nominateButton")) {
+    $("nominateButton")
+        .addEventListener(
+            "click",
+            () => {
+                playClickSound();
+
+                const select =
+                    $("nomineeSelect");
+
+                const playerId =
+                    select?.value;
+
+                if (!playerId) {
+                    return;
+                }
+
+                socket.emit(
+                    "nominateChancellor",
+                    {
+                        playerId
+                    }
+                );
+            }
+        );
+}
+
+/* =========================================================
+   رأی‌گیری
+========================================================= */
+
+if ($("yesVoteButton")) {
+    $("yesVoteButton")
+        .addEventListener(
+            "click",
+            () => {
+                playClickSound();
+
+                socket.emit(
+                    "castVote",
+                    {
+                        vote: "yes"
+                    }
+                );
+            }
+        );
+}
+
+if ($("noVoteButton")) {
+    $("noVoteButton")
+        .addEventListener(
+            "click",
+            () => {
+                playClickSound();
+
+                socket.emit(
+                    "castVote",
+                    {
+                        vote: "no"
+                    }
+                );
+            }
+        );
+}
+
+/* =========================================================
+   شروع دوباره
+========================================================= */
+
+if ($("reloadButton")) {
+    $("reloadButton")
+        .addEventListener(
+            "click",
+            () => {
+                window.location.reload();
+            }
+        );
+}
+
+/* =========================================================
+   آموزش
+========================================================= */
+
+if ($("tutorialButton")) {
+    $("tutorialButton")
+        .addEventListener(
+            "click",
+            () => {
+                showScreen(
+                    screens.tutorial
+                );
+            }
+        );
+}
+
+if ($("backFromTutorialButton")) {
+    $("backFromTutorialButton")
+        .addEventListener(
+            "click",
+            () => {
+                showScreen(
+                    screens.home
+                );
+            }
+        );
+}
+
+/* =========================================================
+   فروشگاه
+========================================================= */
+
+if ($("openShopButton")) {
+    $("openShopButton")
+        .addEventListener(
+            "click",
+            () => {
+                showScreen(
+                    screens.shop
+                );
+
+                socket.emit(
+                    "getProfile"
+                );
+            }
+        );
+}
+
+if ($("closeShopButton")) {
+    $("closeShopButton")
+        .addEventListener(
+            "click",
+            () => {
+                showScreen(
+                    screens.home
+                );
+            }
+        );
+}
+
+/* =========================================================
+   گیفت کد
+========================================================= */
+
+if ($("openGiftButton")) {
+    $("openGiftButton")
+        .addEventListener(
+            "click",
+            () => {
+                showScreen(
+                    screens.gift
+                );
+            }
+        );
+}
+
+if ($("closeGiftButton")) {
+    $("closeGiftButton")
+        .addEventListener(
+            "click",
+            () => {
+                showScreen(
+                    screens.home
+                );
+            }
+        );
+}
+
+if ($("redeemGiftButton")) {
+    $("redeemGiftButton")
+        .addEventListener(
+            "click",
+            () => {
+                const input =
+                    $("giftCodeInput");
+
+                const code =
+                    input?.value
+                        .trim();
+
+                if (!code) {
+                    if ($("giftMessage")) {
+                        $("giftMessage").textContent =
+                            "کد هدیه را وارد کن.";
+                    }
+                    return;
+                }
+
+                socket.emit(
+                    "redeemGiftCode",
+                    { code }
+                );
+            }
+        );
+}
+
+/* =========================================================
+   موسیقی
+========================================================= */
+
+if ($("musicButton")) {
+    $("musicButton")
+        .addEventListener(
+            "click",
+            async () => {
+                const audio =
+                    $("menuMusic");
+
+                if (!audio) return;
+
+                try {
+                    if (audio.paused) {
+                        await audio.play();
+
+                        $("musicButton")
+                            .textContent =
+                            "🔊 موسیقی: روشن";
+                    } else {
+                        audio.pause();
+
+                        $("musicButton")
+                            .textContent =
+                            "🎵 موسیقی: خاموش";
+                    }
+                } catch (_) {
+                    if ($("musicHint")) {
+                        $("musicHint").textContent =
+                            "فایل موسیقی پیدا نشد یا مرورگر اجازه پخش نداد.";
+                    }
+                }
+            }
+        );
+}
+
+/* =========================================================
+   Socket Events
+========================================================= */
+
+/* ساخت اتاق */
+
 socket.on(
     "roomCreated",
-    ({
-        roomCode: code
-    }) => {
+    (data) => {
+        const roomCode =
+            data?.roomCode;
 
-        $("roomCode")
-            .textContent =
-            code;
+        const token =
+            data?.playerToken;
 
-        saveSession(
-            code
-        );
+        if (token) {
+            playerToken =
+                token;
 
-        showScreen(
-            screens.lobby
+            localStorage.setItem(
+                PLAYER_TOKEN_KEY,
+                token
+            );
+        }
+
+        if (roomCode) {
+            saveSession(
+                roomCode
+            );
+
+            if ($("roomCode")) {
+                $("roomCode").textContent =
+                    roomCode;
+            }
+
+            showScreen(
+                screens.lobby
+            );
+        }
+    }
+);
+
+/* توکن */
+
+socket.on(
+    "playerToken",
+    (data) => {
+        const token =
+            data?.playerToken;
+
+        if (!token) return;
+
+        playerToken =
+            token;
+
+        localStorage.setItem(
+            PLAYER_TOKEN_KEY,
+            token
         );
     }
 );
 
-/*
-    وضعیت لابی
-*/
+/* وضعیت لابی */
+
 socket.on(
     "roomState",
     ({
-        roomCode: code,
+        roomCode,
         players,
         started,
         messages
     }) => {
+        if ($("roomCode")) {
+            $("roomCode").textContent =
+                roomCode;
+        }
 
-        $("roomCode")
-            .textContent =
-            code;
-
-        $("playerCount")
-            .textContent =
-            `${players.length} / 10`;
+        if ($("playerCount")) {
+            $("playerCount").textContent =
+                `${players.length} / 10`;
+        }
 
         renderPlayers(
             players
@@ -1417,8 +1701,11 @@ socket.on(
             messages || []
         );
 
-        if (!started) {
+        saveSession(
+            roomCode
+        );
 
+        if (!started) {
             showScreen(
                 screens.lobby
             );
@@ -1426,40 +1713,37 @@ socket.on(
     }
 );
 
-/*
-    چت
-*/
+/* چت لابی */
+
 socket.on(
     "chatMessage",
-    (message) =>
+    (message) => {
         renderChatMessage(
             message
-        )
-);
-
-/*
-    شروع بازی
-*/
-socket.on(
-    "gameStarted",
-    () => {
-
-        $("lobbyMessage")
-            .textContent =
-            "🎴 بازی شروع شد...";
+        );
     }
 );
 
-/*
-    نقش
-*/
+/* شروع بازی */
+
+socket.on(
+    "gameStarted",
+    () => {
+        if ($("lobbyMessage")) {
+            $("lobbyMessage").textContent =
+                "🎴 بازی شروع شد...";
+        }
+    }
+);
+
+/* نقش */
+
 socket.on(
     "roleAssigned",
     ({
         role,
         allies
     }) => {
-
         renderRole(
             role,
             allies || []
@@ -1471,20 +1755,21 @@ socket.on(
     }
 );
 
-/*
-    وضعیت بازی
-*/
+/* وضعیت بازی */
+
 socket.on(
     "gameState",
     (state) => {
-
         pendingState =
             state;
 
         /*
-            ابتدا بازیکن نقش خودش را ببیند.
+            اگر صفحه نقش باز است،
+            صبر می‌کنیم بازیکن روی
+            «ورود به بازی» بزند.
         */
         if (
+            screens.role &&
             !screens.role.classList.contains(
                 "hidden"
             )
@@ -1498,143 +1783,333 @@ socket.on(
     }
 );
 
-/*
-    ==================================================
-    3 کارت صدر
-    ==================================================
-*/
+/* =========================================================
+   سه کارت صدر
+========================================================= */
+
 socket.on(
     "policyDrawn",
-    ({ cards }) => {
-
+    ({
+        cards
+    }) => {
         showScreen(
             screens.game
         );
 
-        $("presidentPolicyBox")
-            .classList.remove(
-                "hidden"
-            );
+        if ($("presidentPolicyBox")) {
+            $("presidentPolicyBox")
+                .classList.remove(
+                    "hidden"
+                );
+        }
 
-        $("voteBox")
-            .classList.add(
-                "hidden"
-            );
+        if ($("voteBox")) {
+            $("voteBox")
+                .classList.add(
+                    "hidden"
+                );
+        }
 
-        $("nominationBox")
-            .classList.add(
-                "hidden"
-            );
+        if ($("nominationBox")) {
+            $("nominationBox")
+                .classList.add(
+                    "hidden"
+                );
+        }
 
-        $("ministerPolicyBox")
-            .classList.add(
-                "hidden"
-            );
+        if ($("ministerPolicyBox")) {
+            $("ministerPolicyBox")
+                .classList.add(
+                    "hidden"
+                );
+        }
 
         renderPresidentCards(
             cards
         );
 
-        $("phaseTitle")
-            .textContent =
-            "📜 سه کارت سیاست صدر";
+        if ($("phaseTitle")) {
+            $("phaseTitle").textContent =
+                "📜 انتخاب یک کارت از سه کارت";
+        }
 
-        $("discardHint")
-            .textContent =
-            "یکی از ۳ کارت را کنار بگذار.";
+        if ($("discardHint")) {
+            $("discardHint").textContent =
+                "یکی را کنار بگذار تا دو کارت به وزیر برود.";
+        }
     }
 );
 
-/*
-    ==================================================
-    2 کارت وزیر
-    ==================================================
-*/
+/* =========================================================
+   دو کارت وزیر
+========================================================= */
+
 socket.on(
     "ministerPolicy",
-    ({ cards }) => {
-
+    (data) => {
         showScreen(
             screens.game
         );
 
-        $("ministerPolicyBox")
-            .classList.remove(
-                "hidden"
-            );
+        if ($("ministerPolicyBox")) {
+            $("ministerPolicyBox")
+                .classList.remove(
+                    "hidden"
+                );
+        }
 
-        $("presidentPolicyBox")
-            .classList.add(
-                "hidden"
-            );
+        if ($("presidentPolicyBox")) {
+            $("presidentPolicyBox")
+                .classList.add(
+                    "hidden"
+                );
+        }
 
-        $("nominationBox")
-            .classList.add(
-                "hidden"
-            );
+        if ($("nominationBox")) {
+            $("nominationBox")
+                .classList.add(
+                    "hidden"
+                );
+        }
 
-        $("voteBox")
-            .classList.add(
-                "hidden"
-            );
+        if ($("voteBox")) {
+            $("voteBox")
+                .classList.add(
+                    "hidden"
+                );
+        }
+
+        /*
+            نسخه اصلی سرور باید cards
+            ارسال کند.
+        */
+
+        const cards =
+            Array.isArray(data?.cards)
+                ? data.cards
+                : [];
 
         renderMinisterCards(
             cards
         );
 
-        $("phaseTitle")
-            .textContent =
-            "📜 دو کارت وزیر";
-
-        $("gameMessage")
-            .textContent =
-            "یکی از دو کارت را انتخاب کن و سپس تصویبش کن.";
+        if ($("phaseTitle")) {
+            $("phaseTitle").textContent =
+                "📜 انتخاب سیاست وزیر";
+        }
     }
 );
 
-/*
-    پایان
-*/
+/* چت بازی */
+
 socket.on(
-    "gameOver",
-    (winner) =>
-        showGameOver(
-            winner
-        )
+    "gameChatMessage",
+    (message) => {
+        renderChatMessage(
+            message,
+            $("gameChatMessages")
+        );
+    }
 );
 
-/*
-    خطا
-*/
+/* پایان بازی */
+
+socket.on(
+    "gameOver",
+    (winner) => {
+        showGameOver(
+            winner
+        );
+    }
+);
+
+/* راوی */
+
+socket.on(
+    "narrator",
+    ({
+        text
+    }) => {
+        speak(
+            text
+        );
+    }
+);
+
+/* پروفایل */
+
+socket.on(
+    "profileState",
+    (profile) => {
+        renderProfile(
+            profile
+        );
+    }
+);
+
+/* گیفت */
+
+socket.on(
+    "giftResult",
+    (result) => {
+        if ($("giftMessage")) {
+            $("giftMessage").textContent =
+                result?.message || "";
+        }
+
+        if (
+            result?.ok &&
+            $("giftCodeInput")
+        ) {
+            $("giftCodeInput").value =
+                "";
+        }
+    }
+);
+
+/* آواتار */
+
+socket.on(
+    "avatarResult",
+    (result) => {
+        if ($("giftMessage")) {
+            $("giftMessage").textContent =
+                result?.message || "";
+        }
+
+        if (result?.ok) {
+            socket.emit(
+                "getProfile"
+            );
+        }
+    }
+);
+
+/* خطای سرور */
+
 socket.on(
     "errorMessage",
     (message) => {
-
         showError(
             message
         );
 
-        if (
-            $("lobbyMessage")
-        ) {
+        if ($("lobbyMessage")) {
+            $("lobbyMessage").textContent =
+                message;
+        }
 
-            $("lobbyMessage")
-                .textContent =
+        if ($("giftMessage")) {
+            $("giftMessage").textContent =
+                message;
+        }
+
+        if ($("gameMessage")) {
+            $("gameMessage").textContent =
                 message;
         }
     }
 );
 
-/*
-    اتصال
-*/
+/* اتصال دوباره */
+
+socket.on(
+    "reconnected",
+    ({
+        roomCode,
+        started
+    }) => {
+        if (roomCode) {
+            saveSession(
+                roomCode
+            );
+        }
+
+        if ($("lobbyMessage")) {
+            $("lobbyMessage").textContent =
+                started
+                    ? "🔌 اتصال دوباره برقرار شد؛ جایگاه شما حفظ شد."
+                    : "🔌 اتصال دوباره برقرار شد.";
+        }
+    }
+);
+
+/* =========================================================
+   اتصال Socket
+========================================================= */
+
 socket.on(
     "connect",
     () => {
-
         console.log(
-            "✅ اتصال به سرور برقرار شد:",
+            "Socket connected:",
             socket.id
+        );
+
+        /*
+            سرور فعلی ممکن است reconnectPlayer
+            نداشته باشد؛ بنابراین فقط اگر
+            چنین سیستمی در سرور وجود داشته باشد
+            این درخواست را می‌فرستیم.
+        */
+
+        if (
+            playerToken &&
+            savedRoom
+        ) {
+            socket.emit(
+                "reconnectPlayer",
+                {
+                    roomCode:
+                        savedRoom,
+                    playerToken
+                }
+            );
+        }
+
+        /*
+            دریافت پروفایل در صورت وجود
+            سیستم اکانت.
+        */
+
+        socket.emit(
+            "getProfile"
         );
     }
 );
+
+socket.on(
+    "disconnect",
+    (reason) => {
+        console.log(
+            "Socket disconnected:",
+            reason
+        );
+    }
+);
+
+socket.on(
+    "connect_error",
+    (error) => {
+        console.error(
+            "Socket connection error:",
+            error
+        );
+    }
+);
+
+/* =========================================================
+   آماده‌سازی Speech API
+========================================================= */
+
+if (
+    window.speechSynthesis &&
+    typeof window.speechSynthesis.getVoices ===
+        "function"
+) {
+    window.speechSynthesis.getVoices();
+}
+
+/* =========================================================
+   پایان game.js
+========================================================= */
