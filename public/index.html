@@ -1,0 +1,474 @@
+```html
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>سایه‌های دربار</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/style.css">
+</head>
+
+<body>
+
+  <div class="background"></div>
+
+  <!-- تصویر اصلی ناصرالدین شاه -->
+  <div class="shah-decoration">
+    <img src="/assets/naser.jpg" alt="ناصرالدین شاه">
+  </div>
+
+  <!-- ================= HOME ================= -->
+
+  <main id="homeScreen" class="screen active">
+
+    <div class="home-layout">
+
+      <section class="hero">
+
+        <div class="ornament">❖</div>
+
+        <h1>سایه‌های دربار</h1>
+
+        <p class="subtitle">
+          بازی استنتاج، سیاست و خیانت در دربار قاجار
+        </p>
+
+        <div class="divider"></div>
+
+        <p class="intro">
+          دربار در سکوت فرو رفته است.
+          چه کسی وفادار است و چه کسی در سایه‌ها نقشه می‌کشد؟
+        </p>
+
+        <div class="home-actions">
+
+          <input
+            id="playerName"
+            maxlength="24"
+            placeholder="نام خود را وارد کنید"
+            autocomplete="off"
+          >
+
+          <button id="createRoomBtn" class="gold-btn">
+            ساخت میز جدید
+          </button>
+
+          <div class="join-row">
+
+            <input
+              id="roomCode"
+              maxlength="10"
+              placeholder="کد میز"
+              autocomplete="off"
+            >
+
+            <button id="joinRoomBtn">
+              ورود
+            </button>
+
+          </div>
+
+        </div>
+
+        <button id="tutorialBtn" class="link-btn">
+          📜 آموزش بازی
+        </button>
+
+      </section>
+
+    </div>
+
+  </main>
+
+
+  <!-- ================= TUTORIAL ================= -->
+
+  <section id="tutorialScreen" class="screen hidden">
+
+    <div class="panel tutorial-panel">
+
+      <button class="close-btn" data-close="tutorialScreen">
+        ×
+      </button>
+
+      <h2>📜 آموزش سایه‌های دربار</h2>
+
+      <div class="tutorial-content">
+
+        <h3>هدف بازی</h3>
+
+        <p>
+          دو جناح در تلاش‌اند کنترل دربار را به دست بگیرند.
+          نقش واقعی خودت را مخفی نگه دار و به تصمیم‌های دیگران دقت کن.
+        </p>
+
+        <h3>روند هر دور</h3>
+
+        <ol>
+          <li>صدر اعظم این دور مشخص می‌شود.</li>
+          <li>صدر اعظم یک وزیر پیشنهاد می‌کند.</li>
+          <li>همه بازیکنان درباره دولت رأی می‌دهند.</li>
+          <li>اگر دولت تأیید شود، صدر اعظم ۳ قانون دریافت می‌کند.</li>
+          <li>صدر اعظم یکی از ۳ قانون را مخفیانه حذف می‌کند.</li>
+          <li>۲ قانون باقی‌مانده برای وزیر ارسال می‌شود.</li>
+          <li>وزیر یکی از آن دو قانون را انتخاب می‌کند.</li>
+          <li>قانون اجرا شده و دور بعد شروع می‌شود.</li>
+        </ol>
+
+        <h3>نقش‌ها</h3>
+
+        <p>
+          <strong>📜 مشروطه‌خواه:</strong>
+          تلاش می‌کند قوانین مشروطه را به تصویب برساند.
+        </p>
+
+        <p>
+          <strong>👑 قاجاری:</strong>
+          تلاش می‌کند قدرت جناح قاجار را افزایش دهد.
+        </p>
+
+        <p>
+          <strong>👑 ناصرالدین‌شاه:</strong>
+          نقش ویژه جناح قاجار است و هویتش برای دیگران مخفی است.
+        </p>
+
+        <h3>قانون طلایی</h3>
+
+        <p class="warning">
+          هیچ‌کس نمی‌داند چه کسی واقعاً در طرف اوست.
+          به حرف‌ها اعتماد نکن؛ رفتار بازیکنان را بررسی کن.
+        </p>
+
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- ================= LOBBY ================= -->
+
+  <section id="lobbyScreen" class="screen hidden">
+
+    <div class="game-layout">
+
+      <aside class="side-card">
+
+        <div class="mini-shah">
+          <img src="/assets/naser.jpg" alt="ناصرالدین شاه">
+        </div>
+
+        <h2>دربار</h2>
+
+        <div class="room-code">
+          <span>کد میز</span>
+          <strong id="roomCodeDisplay">---</strong>
+        </div>
+
+        <button id="startGameBtn" class="gold-btn">
+          آغاز بازی
+        </button>
+
+      </aside>
+
+
+      <section class="panel lobby-panel">
+
+        <h2>بازیکنان دربار</h2>
+
+        <div id="playerList" class="player-list"></div>
+
+      </section>
+
+
+      <section class="panel chat-panel">
+
+        <h2>💬 گفت‌وگوی دربار</h2>
+
+        <div id="lobbyChat" class="chat-messages"></div>
+
+        <div class="chat-input">
+
+          <input
+            id="lobbyMessage"
+            placeholder="پیام خود را بنویسید..."
+          >
+
+          <button id="lobbySendBtn">
+            ارسال
+          </button>
+
+        </div>
+
+      </section>
+
+    </div>
+
+  </section>
+
+
+  <!-- ================= GAME ================= -->
+
+  <section id="gameScreen" class="screen hidden">
+
+    <div class="game-header">
+
+      <div class="header-title">
+        <span>سایه‌های دربار</span>
+        <small id="roundLabel">دور ۱</small>
+      </div>
+
+      <div class="shah-small">
+        <img src="/assets/naser.jpg" alt="ناصرالدین شاه">
+      </div>
+
+    </div>
+
+
+    <div class="game-layout">
+
+      <!-- LEFT -->
+
+      <aside class="game-sidebar">
+
+        <div class="panel role-panel">
+
+          <h3>نقش شما</h3>
+
+          <div id="myRole" class="role">
+            در انتظار...
+          </div>
+
+          <div id="teamInfo"></div>
+
+        </div>
+
+
+        <div class="panel track-panel">
+
+          <h3>قوانین اجرا شده</h3>
+
+          <div class="tracks">
+
+            <div class="track">
+
+              <span>📜 مشروطه</span>
+
+              <strong id="constitutionCount">
+                0
+              </strong>
+
+            </div>
+
+            <div class="track">
+
+              <span>👑 قاجار</span>
+
+              <strong id="qajarCount">
+                0
+              </strong>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <div class="panel track-panel">
+
+          <h3>شمارنده انتخابات</h3>
+
+          <div id="electionTracker">
+            0 / 3
+          </div>
+
+        </div>
+
+      </aside>
+
+
+      <!-- CENTER -->
+
+      <main class="game-board">
+
+        <div class="panel status-panel">
+
+          <div class="status-icon">
+            👑
+          </div>
+
+          <h2 id="gameStatus">
+            در انتظار شروع...
+          </h2>
+
+          <p id="gameInstruction">
+            وضعیت بازی اینجا نمایش داده می‌شود.
+          </p>
+
+        </div>
+
+
+        <!-- انتخاب وزیر -->
+
+        <div id="ministerSelection" class="panel action-panel hidden">
+
+          <h3>انتخاب وزیر</h3>
+
+          <p>
+            شما صدر اعظم هستید.
+            یک بازیکن را به عنوان وزیر انتخاب کنید.
+          </p>
+
+          <div id="ministerCandidates" class="candidate-list"></div>
+
+        </div>
+
+
+        <!-- رأی -->
+
+        <div id="votePanel" class="panel action-panel hidden">
+
+          <h3>🗳️ رأی‌گیری دولت</h3>
+
+          <p id="governmentProposal"></p>
+
+          <div class="vote-buttons">
+
+            <button id="voteYes" class="yes-btn">
+              ✓ موافق
+            </button>
+
+            <button id="voteNo" class="no-btn">
+              ✕ مخالف
+            </button>
+
+          </div>
+
+          <div id="voteCount">
+            0 / 0
+          </div>
+
+        </div>
+
+
+        <!-- کارت‌های صدر اعظم -->
+
+        <div id="presidentPolicyPanel" class="panel action-panel hidden">
+
+          <h3>📜 قوانین دربار</h3>
+
+          <p>
+            سه قانون دریافت کرده‌اید.
+            یکی را مخفیانه حذف کنید.
+          </p>
+
+          <div id="presidentCards" class="policy-cards"></div>
+
+        </div>
+
+
+        <!-- کارت‌های وزیر -->
+
+        <div id="ministerPolicyPanel" class="panel action-panel hidden">
+
+          <h3>⚖️ انتخاب قانون</h3>
+
+          <p>
+            یکی از دو قانون را انتخاب کنید.
+          </p>
+
+          <div id="ministerCards" class="policy-cards"></div>
+
+        </div>
+
+
+        <!-- نتیجه -->
+
+        <div id="policyResult" class="panel result-panel hidden">
+
+          <div id="resultIcon"></div>
+
+          <h2 id="resultTitle"></h2>
+
+          <p id="resultText"></p>
+
+        </div>
+
+      </main>
+
+
+      <!-- CHAT -->
+
+      <aside class="panel game-chat-panel">
+
+        <h3>💬 گفت‌وگوی دربار</h3>
+
+        <div id="gameChat" class="chat-messages"></div>
+
+        <div class="chat-input">
+
+          <input
+            id="gameMessage"
+            placeholder="پیام..."
+          >
+
+          <button id="gameSendBtn">
+            ارسال
+          </button>
+
+        </div>
+
+      </aside>
+
+    </div>
+
+  </section>
+
+
+  <!-- ================= FINISH ================= -->
+
+  <div id="finishOverlay" class="overlay hidden">
+
+    <div class="finish-card">
+
+      <img
+        src="/assets/naser.jpg"
+        alt="ناصرالدین شاه"
+      >
+
+      <div>
+
+        <span>دربار به پایان رسید</span>
+
+        <h1 id="winnerTitle">
+          ---
+        </h1>
+
+        <p id="winnerReason">
+          ---
+        </p>
+
+        <button onclick="location.reload()" class="gold-btn">
+          بازگشت به منوی اصلی
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/game.js"></script>
+
+</body>
+</html>
+```
